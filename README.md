@@ -9,8 +9,10 @@ lines. Nobody has to join the `docker` group.
 
 ## Status
 
-Phases 1 to 4 are in: the sampler, the widget, the polkit rule and the rest
-of the actions.
+All five phases of the plan are in: the sampler, the widget, the polkit
+rule, the rest of the actions, and the `external_plugins` line in
+[omarchy-mods](https://github.com/diogochaves/omarchy-mods) that links this
+checkout on a fresh box.
 
 - `helpers/vm-state.sh`, `helpers/rdp-probe.sh` and the pure state machine in
   `lib/State.js`, with `node --test tests/` over all three. The sampler also
@@ -95,6 +97,25 @@ what the stopped card's `4 cores · 16G` pill, its Cores/RAM readings and its
 "Last run" print — nothing else reads it and nothing else writes it. Deleting
 it is safe: those four readings go blank until the VM next runs. It is
 rewritten when the shape changes and at most once a minute otherwise.
+
+## Tuning the VM
+
+None of this is widget work, and the widget does not pretend otherwise: it
+shows the VM's shape, it does not change it. What a "normal" VM offers and how
+to get it here, as far as Omarchy's helper allows:
+
+| Want | How, here | Notes |
+|------|-----------|-------|
+| Change cores / RAM (VM off) | `omarchy-windows-vm install` again | Re-asks everything, rewrites the compose, **starts the VM immediately** and opens the browser. Cores/RAM apply at that boot; `data.img` is kept. **Enter the same username and password**: they were baked into the guest at first install, and different ones only rewrite the credentials file and break RDP login. Needs `DISK+10 GB` free, computed without subtracting the existing image. |
+| Change cores / RAM (VM on) | Not possible | No hotplug headroom in `-smp` (no `maxcpus`), no balloon device, and the QEMU monitor is `unix:/run/shm/monitor.sock` inside the container. Stop, change, start. |
+| Grow the disk | `install` again with a bigger DISK | Grow only; Windows may need the partition extended in Disk Management. |
+| Anything else dockur supports (KEYBOARD, REGION, LANGUAGE, DISK2_SIZE, extra ports, `/dev/bus/usb`, DHCP/macvlan networking) | `sudo` edit of `/var/lib/omarchy/windows/docker-compose.yml`, then stop/start | `assert_mounts_safe` only checks owner/mode, the two bind lines and `PROTECT`; extra keys survive. **The next `install` run overwrites them.** Keep a copy. |
+| Snapshot / rollback (VM off) | `cp -a --reflink=always ~/.windows ~/.windows.snap-<date>` | On btrfs a reflink copy is instant and free until blocks diverge. Rollback = copy back while stopped. User-owned, no root. |
+| Suspend to RAM | Pause | A cgroup freeze; see above. The guest clock resyncs on resume. |
+| Suspend to disk | Not from outside | `savevm` needs qcow2 and the monitor. Windows' own Hibernate from inside the guest is untested. |
+| Second VM | Not with the helper | Own compose, other ports, outside Omarchy. |
+| Autostart at login | Not by default | Possible with the polkit rule plus a user unit that runs `omarchy-windows-vm launch -k`. |
+| Logs / console | Web viewer on 8006 | `docker logs` needs the socket. |
 
 ## Polkit rule
 
