@@ -390,6 +390,20 @@ QtObject {
 
   function connect() {
     if (root.busy) return
+    root.launch()
+  }
+
+  // The unguarded half of connect(), for Resume's exit handler. It cannot go
+  // through connect(): `busy` is a binding, and inside a Process's onExited
+  // that binding is stale — Quickshell emits `exited` before
+  // `runningChanged`, so `busy` still says the unpause is running (even
+  // though resumeProc.running itself already reads false) and connect()'s
+  // guard dropped the reconnect on the floor, silently. Reproduced with a
+  // stubbed Service under quickshell: busy=true inside resumeProc.onExited,
+  // resumeProc.running -> false logged only after it. Nothing else can be in
+  // flight there: resume() checked `busy` when it was pressed and only the
+  // unpause has run since.
+  function launch() {
     root.clearDesired()
     root.launching = true
     launchProc.running = true
@@ -536,8 +550,8 @@ QtObject {
   // meanwhile would be queued in the socket and delivered to Windows on
   // resume. Stopping our own omawin-launch unit closes the window cleanly
   // (the launcher exits 0 with "RDP session closed. Windows VM is still
-  // running.") and only then is the container frozen. Resume does not reopen
-  // the window; Connect does.
+  // running.") and only then is the container frozen. Resume reopens it, see
+  // resume().
   function pause() {
     if (root.busy) return
     root.clearDesired()
@@ -563,8 +577,9 @@ QtObject {
   // "Resume" that left the user staring at no window and needing Connect too
   // was the confusing half of the pause cycle. The reconnect is the same
   // launch unit Connect uses; up_wait sees the container already running and
-  // goes straight to xfreerdp. (A Resume that is really the first half of a
-  // Stop, stopAfterResume, reopens nothing — it stops instead.)
+  // goes straight to xfreerdp. It is started through launch(), not connect():
+  // see the note there. (A Resume that is really the first half of a Stop,
+  // stopAfterResume, reopens nothing — it stops instead.)
   function resume() {
     if (root.busy) return
     root.clearDesired()
@@ -612,7 +627,7 @@ QtObject {
         return
       }
       if (thenConnect) {
-        root.connect()
+        root.launch()
         return
       }
       root.refresh()
