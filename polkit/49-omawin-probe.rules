@@ -1,0 +1,18 @@
+// Omawin: throwaway probe rule. It decides nothing — it only writes what
+// pkexec actually puts in the action details ("program", "command_line",
+// "cmdline_short") to polkitd's journal, so 49-omawin.rules can be trusted to
+// match on them before it is relied upon. Every pkexec call still prompts.
+//
+//   sudo ./setup polkit --probe
+//   pkexec /usr/bin/omarchy-windows-vm __priv status   (answer or cancel)
+//   journalctl -u polkit --since -5min --no-pager | grep omawin-probe
+//
+// IT MUST NOT STAY INSTALLED: it logs a line for every pkexec on the box, by
+// any user, forever. `sudo ./setup polkit` removes it (so does --remove).
+polkit.addRule(function (action, subject) {
+  if (action.id !== "org.freedesktop.policykit.exec") return;
+  polkit.log("omawin-probe program=" + action.lookup("program") +
+    " command_line=" + action.lookup("command_line") +
+    " cmdline_short=" + action.lookup("cmdline_short") +
+    " user=" + subject.user);
+});

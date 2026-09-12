@@ -1,0 +1,199 @@
+#!/bin/bash
+# Installs chaves.omawin's polkit rule, the one privileged part of the plugin.
+#
+#   sudo ./setup polkit [--user NAME]   install 49-omawin.rules for NAME
+#                                       (default $SUDO_USER); also removes the
+#                                       probe rule. Idempotent.
+#   sudo ./setup polkit --probe         install the throwaway probe rule that
+#                                       logs pkexec's action details, to check
+#                                       what 49-omawin.rules has to match
+#   sudo ./setup polkit --status        which of the two rules are installed
+#   sudo ./setup polkit --remove        remove both
+#   ./setup -h                          this text
+#
+# Root is needed only because /etc/polkit-1/rules.d is root:polkitd 0750: the
+# rules cannot even be listed as the user. Nothing else here is privileged,
+# nothing is started or stopped, and the VM is never touched.
+#
+# polkitd watches the rules directory and reloads on its own (inotify), so no
+# daemon is restarted here — the rule is live the moment install(1) returns.
+#
+# Everything is resolved from $0, so `sudo ./setup polkit` works from the
+# checkout without a PATH or an installed copy. coreutils and bash only.
+#
+# Test hooks (for tests/setup.test.mjs; never set them by hand):
+#   POLKIT_RULES_DIR      rules directory  (default /etc/polkit-1/rules.d)
+#   SETUP_SKIP_ROOT_CHECK =1 skips the "must be root" guard, so the tests can
+#                         install into a fake root as an ordinary user. The
+#                         -o root -g root of install(1) is likewise only
+#                         passed when actually running as root.
+
+set -euo pipefail
+export LC_ALL=C
+
+repo_dir=$(cd -- "$(dirname -- "$0")" && pwd)
+rules_dir=${POLKIT_RULES_DIR:-/etc/polkit-1/rules.d}
+
+rule_name=49-omawin.rules
+probe_name=49-omawin-probe.rules
+rule_src=$repo_dir/polkit/49-omawin.rules.in
+probe_src=$repo_dir/polkit/$probe_name
+rule_dest=$rules_dir/$rule_name
+probe_dest=$rules_dir/$probe_name
+
+usage() {
+  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+die() {
+  echo "setup: $*" >&2
+  exit 1
+}
+
+require_root() {
+  [[ ${SETUP_SKIP_ROOT_CHECK-} == 1 ]] && return 0
+  ((EUID == 0)) || die "must be run as root: sudo ./setup $*"
+}
+
+# install(1) cannot chown as a non-root user, and the tests run as one.
+install_file() {
+  local src=$1 dest=$2
+  local -a owner=()
+  ((EUID == 0)) && owner=(-o root -g root)
+  install -D -m 0644 "${owner[@]}" "$src" "$dest"
+}
+
+remove_file() {
+  local path=$1
+  [[ -e $path ]] || return 1
+  rm -f "$path"
+}
+
+# The user named by an installed rule, read back out of the rule itself.
+rule_user() {
+  sed -n 's/.*subject\.user !== "\([^"]*\)".*/\1/p' "$1" | head -n 1
+}
+
+polkit_install() {
+  local user=$1
+
+  # $SUDO_USER is empty under plain `su` and says "root" under `sudo -u root`:
+  # in both cases there is no desktop user to name, so ask for one.
+  [[ -n $user ]] || die "no target user: pass --user NAME"
+  [[ $user != root ]] ||
+    die "refusing to write a rule for root, which needs no pkexec exemption:
+    pass --user NAME"
+  [[ $user =~ ^[a-z_][a-z0-9_-]*\$?$ ]] ||
+    die "not a plausible user name: $user"
+  id -- "$user" >/dev/null 2>&1 ||
+    echo "setup: warning: no user '$user' on this system — installing anyway" >&2
+
+  local tmp
+  tmp=$(mktemp)
+  # shellcheck disable=SC2064  # $tmp is wanted now, not at trap time
+  trap "rm -f '$tmp'" EXIT
+  sed "s/@USER@/$user/g" "$rule_src" >"$tmp"
+  if grep -q '@USER@' "$tmp"; then die "@USER@ survived substitution"; fi
+  install_file "$tmp" "$rule_dest"
+  rm -f "$tmp"
+  trap - EXIT
+
+  echo "installed $rule_dest for user $user"
+  if remove_file "$probe_dest"; then echo "removed   $probe_dest (the probe rule)"; fi
+  cat <<EOF
+
+polkitd reloads the directory by itself; the rule is already live. Verify it
+as $user, from a terminal:
+
+  pkexec /usr/bin/omarchy-windows-vm __priv status
+      must print the docker state (or nothing) with NO dialog
+
+  pkexec /usr/bin/omarchy-windows-vm __priv write_compose </dev/null
+      must STILL prompt — cancel it
+EOF
+}
+
+polkit_probe() {
+  install_file "$probe_src" "$probe_dest"
+  cat <<EOF
+installed $probe_dest
+
+It grants nothing: pkexec still prompts, and every call now writes one line to
+polkitd's journal. Next, from a terminal:
+
+  pkexec /usr/bin/omarchy-windows-vm __priv status
+      answer or cancel the prompt — the log line is written either way
+
+  journalctl -u polkit --since -5min --no-pager | grep omawin-probe
+      program= and command_line= must be the resolved path and the full
+      command line; that is what 49-omawin.rules matches on
+
+  sudo ./setup polkit
+      install the real rule (this also removes the probe)
+EOF
+}
+
+polkit_status() {
+  if [[ -f $rule_dest ]]; then
+    echo "present $rule_dest (user: $(rule_user "$rule_dest"))"
+  else
+    echo "absent  $rule_dest"
+  fi
+  if [[ -f $probe_dest ]]; then
+    echo "present $probe_dest — the probe rule, remove it: sudo ./setup polkit --remove"
+  else
+    echo "absent  $probe_dest"
+  fi
+}
+
+polkit_remove() {
+  local removed=0
+  if remove_file "$rule_dest"; then
+    echo "removed $rule_dest"
+    removed=1
+  fi
+  if remove_file "$probe_dest"; then
+    echo "removed $probe_dest"
+    removed=1
+  fi
+  ((removed)) || echo "nothing to remove: neither rule is installed in $rules_dir"
+}
+
+main() {
+  local command=${1-}
+  [[ -n $command ]] || { usage >&2; exit 2; }
+  shift
+  case $command in
+    -h | --help) usage; exit 0 ;;
+    polkit) ;;
+    *) die "unknown command: $command (try ./setup -h)" ;;
+  esac
+
+  local mode=install user=${SUDO_USER-}
+  while (($#)); do
+    case $1 in
+      --remove) mode=remove ;;
+      --probe) mode=probe ;;
+      --status) mode=status ;;
+      --user)
+        (($# >= 2)) || die "--user needs a name"
+        user=$2
+        shift
+        ;;
+      --user=*) user=${1#*=} ;;
+      -h | --help) usage; exit 0 ;;
+      *) die "unknown option: $1 (try ./setup -h)" ;;
+    esac
+    shift
+  done
+
+  require_root "polkit"
+  case $mode in
+    install) polkit_install "$user" ;;
+    probe) polkit_probe ;;
+    status) polkit_status ;;
+    remove) polkit_remove ;;
+  esac
+}
+
+main "$@"

@@ -1,0 +1,22 @@
+// Omawin: let @USER@ drive the Omarchy Windows VM without a password.
+// Only these exact command lines; anything else pkexec asks as usual.
+// Installed by `sudo ./setup polkit`, which fills in the user name below.
+polkit.addRule(function (action, subject) {
+  if (action.id !== "org.freedesktop.policykit.exec") return;
+  if (subject.user !== "@USER@") return;
+  var program = action.lookup("program");
+  var cmd = action.lookup("command_line");
+  var allowed = {
+    "/usr/bin/omarchy-windows-vm": [
+      "/usr/bin/omarchy-windows-vm __priv status",
+      "/usr/bin/omarchy-windows-vm __priv up_wait",
+      "/usr/bin/omarchy-windows-vm __priv down",
+    ],
+    "/usr/bin/docker": [
+      "/usr/bin/docker pause omarchy-windows",
+      "/usr/bin/docker unpause omarchy-windows",
+    ],
+  };
+  if (allowed[program] && allowed[program].indexOf(cmd) !== -1)
+    return polkit.Result.YES;
+});
