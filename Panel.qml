@@ -112,6 +112,9 @@ Panel {
     function mock(line: string, probe: string, action: string): string {
       service.mockLine = String(line)
       service.mockProbe = String(probe)
+      // Handing back to the sampler also drops the mocked transient, so the
+      // card does not sit in "starting" for 150 s after `mock "" "" ""`.
+      if (String(line) === "") service.clearDesired()
       service.refresh()
       if (String(action) !== "") service.setDesired(String(action))
       return service.state + " " + service.sampleLine
@@ -225,6 +228,9 @@ Panel {
           visible: root.inTransit || root.vmState === "booting"
           width: parent.width
           implicitHeight: Style.space(8)
+          // The fill slides in from beyond both ends; without the clip it
+          // paints across the card's padding and past its border.
+          clip: true
 
           Rectangle {
             id: progressTrack
@@ -310,7 +316,7 @@ Panel {
             InfoPair {
               visible: root.vmState === "ready"
               label: "RDP"
-              value: "127.0.0.1:3389"
+              value: service.sessionOpen ? "connected" : "127.0.0.1:3389"
             }
             InfoPair {
               visible: root.vmState === "ready"

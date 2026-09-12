@@ -53,6 +53,6 @@ else about the layout goes through `omarchy bar` too — never hand-edit
 | `open` / `close` / `toggle` / `show` / `hide` | the popup |
 | `status` | one line: the painted state plus the `vm-state.sh` line behind it, e.g. `stopped installed=1 docker=active pid= frozen= cores= ram= web=000 cid=` |
 | `fail <text>` | **debug.** Paints the failed card with `<text>` as the message, without breaking anything to get there. Sticky like a real failure — cleared by the next successful action or state change, or at once with `fail ""`. |
-| `mock <line> [probe] [action]` | **debug.** Stands `<line>` in for `vm-state.sh`, `probe` (`ok`/`no`) in for the RDP probe and `action` (`start`/`stop`) in for a pending transient, so every face of the card can be looked at with the VM switched off. `mock ""` hands the widget back to the real sampler. |
+| `mock <line> [probe] [action]` | **debug.** Stands `<line>` in for `vm-state.sh`, `probe` (`ok`/`no`) in for the RDP probe and `action` (`start`/`stop`) in for a pending transient, so every face of the card can be looked at with the VM switched off. `mock "" "" ""` (all three arguments are required by the IPC) hands the widget back to the real sampler and drops the mocked transient. |
 
 MIT licensed.

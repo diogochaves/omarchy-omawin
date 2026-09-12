@@ -55,7 +55,16 @@ QtObject {
   // top: what "failed" shows the buttons of.
   readonly property string base: State.sampled(root.sample, root.probe)
 
-  readonly property var actions: State.allowedActions(root.state, root.sample, root.base)
+  // While the omawin-launch unit is alive an RDP window is already open (or
+  // on its way), and `launch -k` would only tell us so: Start and Connect
+  // are switched off for that time rather than left as silent no-ops.
+  readonly property var actions: {
+    var allowed = State.allowedActions(root.state, root.sample, root.base)
+    if (root.sessionOpen) {
+      allowed = Object.assign({}, allowed, { start: false, connect: false })
+    }
+    return allowed
+  }
   readonly property string label: State.label(root.state)
   // No cores/RAM cache yet — that is phase 4, so a stopped VM shows nothing
   // and only a running one fills the pill.
@@ -133,6 +142,8 @@ QtObject {
       || (next.frozen !== previous.frozen)
       || (next.installed !== previous.installed)
     if (moved) root.clearDesired()
+    if (next.pid) root.checkUnit()
+    else root.sessionOpen = false
 
     root.nowMs = Date.now()
   }
@@ -197,6 +208,13 @@ QtObject {
     root.nowMs = Date.now()
   }
 
+  // pkexec's wording when the user closes the authentication dialog instead
+  // of answering it. That is a cancel, not a failure: the VM is exactly as it
+  // was and nothing needs retrying, so the card must not go red over it.
+  function dismissed(text) {
+    return String(text).indexOf("Request dismissed") !== -1
+  }
+
   function clearDesired() {
     if (!root.desired.action && !root.desired.failed) return
     root.desired = { action: null, since: 0, failed: "" }
@@ -240,6 +258,10 @@ QtObject {
 
   property bool launching: false
 
+  // Pressing any action clears a sticky failure: the new action gets to
+  // report its own outcome, and a red card from an earlier attempt must not
+  // outlive a Connect that plainly worked.
+
   function start() {
     if (root.busy) return
     root.setDesired("start")
@@ -249,6 +271,7 @@ QtObject {
 
   function connect() {
     if (root.busy) return
+    root.clearDesired()
     root.launching = true
     launchProc.running = true
   }
@@ -259,7 +282,8 @@ QtObject {
     onExited: function (code) {
       var message = root.lastLine(launchOut.text)
       if (code !== 0) {
-        root.fail(message || "could not start the omawin-launch unit")
+        if (root.dismissed(message)) root.clearDesired()
+        else root.fail(message || "could not start the omawin-launch unit")
       } else {
         // "started" or "already-running": either way there is a unit whose
         // outcome we want, so start watching it.
@@ -279,11 +303,21 @@ QtObject {
 
   property bool unitWatch: false
 
+  // True while the unit is alive, i.e. while an RDP window is open or about
+  // to be. Kept current by the 2 s watch after a launch from this shell, and
+  // by one is-active per sample while QEMU runs, so a session that predates
+  // a bar reload (or was started from a terminal) is picked up within 5 s.
+  property bool sessionOpen: false
+
   property Timer unitTimer: Timer {
     interval: 2000
     repeat: true
     running: root.unitWatch
-    onTriggered: if (!unitProc.running) unitProc.running = true
+    onTriggered: root.checkUnit()
+  }
+
+  function checkUnit() {
+    if (!unitProc.running) unitProc.running = true
   }
 
   property Process unitProc: Process {
@@ -294,7 +328,9 @@ QtObject {
     // ignored and the word is what counts.
     onExited: function (code) {
       var text = root.lastLine(unitOut.text)
-      if (text === "active" || text === "activating" || text === "reloading" || text === "deactivating") return
+      var alive = text === "active" || text === "activating" || text === "reloading" || text === "deactivating"
+      root.sessionOpen = alive
+      if (alive || !root.unitWatch) return
       root.unitWatch = false
       resultProc.running = true
     }
@@ -307,7 +343,7 @@ QtObject {
     onExited: function (code) {
       var text = root.lastLine(resultOut.text)
       root.launching = false
-      if (text === "ok" || text === "") root.clearDesired()
+      if (text === "ok" || text === "" || root.dismissed(text)) root.clearDesired()
       else root.fail(text)
       root.refresh()
     }
@@ -328,8 +364,11 @@ QtObject {
     environment: ({ LC_ALL: "C" })
     stderr: StdioCollector { id: stopErr; waitForEnd: true }
     onExited: function (code) {
-      if (code !== 0)
-        root.fail(root.lastLine(stopErr.text) || "omarchy-windows-vm stop exited with status " + code)
+      if (code !== 0) {
+        var message = root.lastLine(stopErr.text)
+        if (root.dismissed(message)) root.clearDesired()
+        else root.fail(message || "omarchy-windows-vm stop exited with status " + code)
+      }
       root.refresh()
     }
   }
