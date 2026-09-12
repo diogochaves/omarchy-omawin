@@ -118,15 +118,15 @@ polkit_probe() {
   cat <<EOF
 installed $probe_dest
 
-It grants nothing: pkexec still prompts, and every call now writes one line to
-polkitd's journal. Next, from a terminal:
+It allows exactly one read-only command line, `__priv status`, and only when
+pkexec's "program" and "command_line" details match the resolved path plus
+arguments that 49-omawin.rules will match on. Next, from a terminal:
 
   pkexec /usr/bin/omarchy-windows-vm __priv status
-      answer or cancel the prompt — the log line is written either way
+      must run with NO dialog: the details are what the real rule expects
 
-  journalctl -u polkit --since -5min --no-pager | grep omawin-probe
-      program= and command_line= must be the resolved path and the full
-      command line; that is what 49-omawin.rules matches on
+  pkexec /usr/bin/omarchy-windows-vm __priv status extra
+      must STILL prompt — cancel it
 
   sudo ./setup polkit
       install the real rule (this also removes the probe)

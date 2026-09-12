@@ -1,18 +1,29 @@
-// Omawin: throwaway probe rule. It decides nothing — it only writes what
-// pkexec actually puts in the action details ("program", "command_line",
-// "cmdline_short") to polkitd's journal, so 49-omawin.rules can be trusted to
-// match on them before it is relied upon. Every pkexec call still prompts.
+// Omawin: throwaway probe rule. It answers open question 1 of the plan by
+// BEHAVIOUR, not by logging: polkitd runs with --log-level=notice on Omarchy
+// and polkit.log() lines never reach the journal there. So this rule allows
+// exactly ONE harmless, read-only command line — `__priv status`, which only
+// runs `docker inspect` — and only when both details pkexec supplies,
+// "program" and "command_line", match the resolved path plus arguments the
+// real rule will match on. Nothing else is granted; every other pkexec call
+// prompts as usual.
 //
 //   sudo ./setup polkit --probe
-//   pkexec /usr/bin/omarchy-windows-vm __priv status   (answer or cancel)
-//   journalctl -u polkit --since -5min --no-pager | grep omawin-probe
+//   pkexec /usr/bin/omarchy-windows-vm __priv status         no prompt = the
+//                                                            details are as
+//                                                            expected
+//   pkexec /usr/bin/omarchy-windows-vm __priv status extra   must still prompt
+//                                                            (cancel it)
 //
-// IT MUST NOT STAY INSTALLED: it logs a line for every pkexec on the box, by
-// any user, forever. `sudo ./setup polkit` removes it (so does --remove).
+// A prompt on the first call means "program" or "command_line" hold something
+// else, and 49-omawin.rules must not be installed as written.
+//
+// IT MUST NOT STAY INSTALLED — not because it grants much (status is what the
+// unprivileged sampler already knows) but because it is a test, not the rule.
+// `sudo ./setup polkit` removes it (so does --remove).
 polkit.addRule(function (action, subject) {
   if (action.id !== "org.freedesktop.policykit.exec") return;
-  polkit.log("omawin-probe program=" + action.lookup("program") +
-    " command_line=" + action.lookup("command_line") +
-    " cmdline_short=" + action.lookup("cmdline_short") +
-    " user=" + subject.user);
+  if (action.lookup("program") !== "/usr/bin/omarchy-windows-vm") return;
+  if (action.lookup("command_line") !== "/usr/bin/omarchy-windows-vm __priv status") return;
+  polkit.log("omawin-probe matched for " + subject.user);
+  return polkit.Result.YES;
 });

@@ -76,19 +76,21 @@ container, and every other user and action falls through to the normal
 prompt. The directory is `root:polkitd 0750`, so installing needs root;
 polkitd notices the new file by itself, nothing is restarted.
 
-Check first what pkexec actually puts in the action details on your box, then
-install:
+Check first that pkexec's action details are what the rule matches on. The
+probe rule allows one read-only command line, `__priv status`, on the same
+exact `program` + `command_line` test the real rule uses, and nothing else
+(polkitd runs with `--log-level=notice` on Omarchy, so a `polkit.log()` probe
+would show nothing):
 
 ```sh
-sudo ./setup polkit --probe                  # logs the details, grants nothing
-pkexec /usr/bin/omarchy-windows-vm __priv status   # answer or cancel
-journalctl -u polkit --since -5min --no-pager | grep omawin-probe
-sudo ./setup polkit                          # the real rule; drops the probe
+sudo ./setup polkit --probe
+pkexec /usr/bin/omarchy-windows-vm __priv status         # must NOT prompt
+pkexec /usr/bin/omarchy-windows-vm __priv status extra   # must prompt; cancel
+sudo ./setup polkit                                      # the real rule; drops the probe
 ```
 
-`program=` and `command_line=` in that log line must be the resolved path and
-the full command line — that is what the rule matches on. Then verify, as the
-user:
+A prompt on the first call means the details differ on your box and the rule
+must not be installed as written. Then verify, as the user:
 
 ```sh
 pkexec /usr/bin/omarchy-windows-vm __priv status              # no dialog

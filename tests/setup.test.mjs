@@ -133,23 +133,25 @@ test('the rendered rule says YES to exactly the five command lines', t => {
   }
 })
 
-test('--probe installs the probe rule and points at the journal', t => {
+test('--probe installs a rule that allows only __priv status on an exact match', t => {
   const dir = rulesDir(t)
   const { status, out } = setup(['polkit', '--probe'], { dir })
   assert.equal(status, 0, out)
+  assert.match(out, /__priv status extra/)
 
-  const source = fs.readFileSync(path.join(dir, PROBE), 'utf8')
-  assert.match(source, /polkit\.log\("omawin-probe /)
-  assert.doesNotMatch(source, /polkit\.Result/)
-  assert.match(out, /journalctl -u polkit .*grep omawin-probe/)
-
-  // It decides nothing, so pkexec keeps prompting for everything.
   const rule = loadRule(path.join(dir, PROBE))
-  assert.equal(ask(rule, {
+  const status_ = {
     user: 'alice',
     program: '/usr/bin/omarchy-windows-vm',
     commandLine: '/usr/bin/omarchy-windows-vm __priv status'
-  }), undefined)
+  }
+  assert.equal(ask(rule, status_), 'yes', 'the one probe command line')
+  assert.equal(ask(rule, { ...status_, user: 'bob' }), 'yes', 'the probe is not per user')
+  assert.equal(ask(rule, { ...status_, commandLine: status_.commandLine + ' extra' }), undefined)
+  assert.equal(ask(rule, { ...status_, commandLine: '/usr/bin/omarchy-windows-vm __priv down' }), undefined)
+  assert.equal(ask(rule, { ...status_, commandLine: '/usr/bin/omarchy-windows-vm __priv up_wait' }), undefined)
+  assert.equal(ask(rule, { ...status_, program: '/usr/share/omarchy/bin/omarchy-windows-vm' }), undefined)
+  assert.equal(ask(rule, { ...status_, id: 'org.freedesktop.login1.reboot' }), undefined)
 })
 
 test('installing the real rule takes the probe back out', t => {
