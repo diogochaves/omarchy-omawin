@@ -108,6 +108,7 @@ QtObject {
   // True while any action process is in flight; every button greys out, so a
   // second press cannot stack a stop on top of a start.
   readonly property bool busy: launchProc.running || stopProc.running || installProc.running
+    || disconnectProc.running
     || pauseProc.running || resumeProc.running
 
   // When the current episode began: the moment Start/Stop was pressed while a
@@ -529,10 +530,33 @@ QtObject {
   // rather than the user pressing Resume.
   property bool stopAfterResume: false
 
+  // Pause disconnects the RDP session first. The freeze stops the guest's RDP
+  // server too, so an open xfreerdp window would sit on a frozen picture until
+  // its connection timed out (seconds, or never) and every click made on it
+  // meanwhile would be queued in the socket and delivered to Windows on
+  // resume. Stopping our own omawin-launch unit closes the window cleanly
+  // (the launcher exits 0 with "RDP session closed. Windows VM is still
+  // running.") and only then is the container frozen. Resume does not reopen
+  // the window; Connect does.
   function pause() {
     if (root.busy) return
     root.clearDesired()
+    if (root.sessionOpen) {
+      disconnectProc.running = true
+      return
+    }
     pauseProc.running = true
+  }
+
+  property Process disconnectProc: Process {
+    command: ["systemctl", "--user", "stop", "omawin-launch"]
+    environment: ({ LC_ALL: "C" })
+    onExited: function (code) {
+      // Whether or not the unit was still there, nothing holds the RDP
+      // session now; freeze.
+      root.sessionOpen = false
+      pauseProc.running = true
+    }
   }
 
   function resume() {

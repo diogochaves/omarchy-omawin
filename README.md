@@ -65,6 +65,13 @@ keeps its RAM, and the compose's `-rtc base=localtime,clock=host,driftfix=slew`
 lets the guest clock catch up on resume. It is not a suspend to disk and it
 survives neither a reboot nor a `stop`.
 
+**Pause closes the RDP window first.** The freeze stops the guest's RDP
+server too, so an open session would sit on a frozen picture until its
+connection timed out, and every click made on it meanwhile would be queued
+and delivered to Windows on resume. So Pause stops the `omawin-launch` unit
+(the launcher exits cleanly, the VM keeps running), then freezes. Resume only
+unfreezes; Connect reopens the window.
+
 **Stop on a paused VM unpauses it first.** `docker compose down` would send
 SIGTERM to a frozen process, wait out the full two-minute grace period and
 then SIGKILL it — an unclean Windows shutdown. So Stop runs `unpause` and only
