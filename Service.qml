@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Quickshell.Io
 import "lib/State.js" as State
 
@@ -18,8 +19,16 @@ import "lib/State.js" as State
 //                         every 3 s while the guest boots, every 30 s once it
 //                         answers (to notice a guest reboot), never otherwise.
 //
-// Nothing here touches the Docker socket or the docker CLI, and nothing here
-// runs pkexec or sudo. The only privileged work is inside
+// One small file is written: $XDG_STATE_HOME/omawin/state.json, the shape of
+// the VM (cores, RAM), when this run of it started and when it was last seen
+// running — that is what the stopped card's pill and "Last run" show. It is
+// pure cache: deleting it only blanks those two readouts until the next run.
+//
+// The docker CLI is called in exactly one place, Pause/Resume, and only
+// through `pkexec /usr/bin/docker pause|unpause omarchy-windows` — one of the
+// five command lines the polkit rule allows, spelled exactly as the rule
+// spells it. Nothing here touches the Docker socket. The only other
+// privileged work is inside
 // `omarchy-windows-vm launch -k` / `stop`, which take the VM lock and call
 // pkexec themselves — or skip it when the user opted into sudoless Docker.
 // `launch -k` blocks for the whole RDP session, so it goes through
@@ -78,10 +87,20 @@ QtObject {
   // The reason the booting card gives for its greyed-out Stop.
   readonly property bool stopHeldByLauncher: root.sessionOpen && root.state === "booting"
   readonly property string label: State.label(root.state)
-  // No cores/RAM cache yet — that is phase 4, so a stopped VM shows nothing
-  // and only a running one fills the pill.
-  readonly property string detail: State.detail(root.sample, null)
-  readonly property string tooltip: State.tooltip(root.state, root.sample, root.desired)
+  // The cores·RAM pill: the live sample while the VM runs, the cache below
+  // once it is off.
+  readonly property string detail: State.detail(root.sample, root.cached)
+  readonly property string tooltip: State.tooltip(root.state, root.sample, root.desired,
+    root.cached, root.nowMs)
+  // The stopped card's two readings, live or cached, and its "Last run".
+  readonly property string coresText: root.sample.cores ? String(root.sample.cores)
+    : (root.cached && root.cached.cores ? String(root.cached.cores) : "—")
+  readonly property string ramText: root.sample.ram ? root.sample.ram
+    : (root.cached && root.cached.ram ? String(root.cached.ram) : "—")
+  readonly property string lastRunText: State.lastRun(root.cached, root.nowMs)
+  // The ready card's "Uptime", from /proc, so it survives a bar reload — and
+  // re-evaluates every second while the panel is open, because nowMs does.
+  readonly property string uptimeText: State.uptime(root.sample.started, root.nowMs)
   readonly property string failedMessage: root.desired && root.desired.failed ? root.desired.failed : ""
   readonly property bool dockerActive: root.sample.docker === "active"
   readonly property bool webUp: root.sample.web === 401
@@ -89,12 +108,13 @@ QtObject {
   // True while any action process is in flight; every button greys out, so a
   // second press cannot stack a stop on top of a start.
   readonly property bool busy: launchProc.running || stopProc.running || installProc.running
+    || pauseProc.running || resumeProc.running
 
   // When the current episode began: the moment Start/Stop was pressed while a
   // transient is pending, otherwise the moment this QEMU process first showed
   // up. The second half is what the booting card's "Since" counts, and it is
-  // deliberately not an uptime: it only knows what this shell has seen. A real
-  // uptime needs the phase 4 cache.
+  // deliberately not an uptime: it only knows what this shell has seen. The
+  // real uptime is `uptimeText`, out of /proc.
   property double pidSince: 0
   readonly property double sinceBase: root.desired && root.desired.action ? root.desired.since : root.pidSince
   readonly property string sinceText: root.formatSince(root.sinceBase, root.nowMs)
@@ -109,6 +129,87 @@ QtObject {
   readonly property string directory: decodeURIComponent(
     Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "").replace(/\/$/, ""))
   readonly property string helpers: directory + "/helpers"
+  readonly property string home: Quickshell.env("HOME")
+
+  // --------------------------------------------------------------- the cache
+  // What a stopped VM still knows about itself: {cores, ram, started,
+  // lastSeen}, written from the last running sample. Persistent user state
+  // rather than regeneratable cache in the XDG sense — nothing else can
+  // recreate "the VM last ran at 09:15" — so it lives under XDG_STATE_HOME,
+  // like the shell's own notification history. Deleting the file is safe: the
+  // pill, "Cores", "RAM" and "Last run" go blank until the VM next runs.
+  readonly property string stateDir:
+    (Quickshell.env("XDG_STATE_HOME") || (root.home + "/.local/state")) + "/omawin"
+  readonly property string cachePath: root.stateDir + "/state.json"
+
+  property var cached: null
+  // Nothing is written before the file on disk has been read (or found
+  // missing), or a shell restart would overwrite a good cache with an empty
+  // one from the first sample.
+  property bool cacheLoaded: false
+  // lastSeen moves with every 5 s sample, but "Last run" is printed to the
+  // minute: writing that often would be pure churn. The shape (cores, RAM,
+  // the start time) is written the moment it changes; a plain lastSeen bump
+  // waits a minute.
+  property double cacheWrittenAt: 0
+
+  property Process mkdirProc: Process {
+    command: ["mkdir", "-p", root.stateDir]
+  }
+
+  property FileView cacheFile: FileView {
+    id: cacheFile
+    path: root.cachePath
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.loadCache(text())
+    // First run: no file yet. The cache stays null and the first running
+    // sample creates it.
+    onLoadFailed: root.cacheLoaded = true
+  }
+
+  function loadCache(text) {
+    if (!root.cacheLoaded) {
+      var parsed = null
+      try {
+        parsed = JSON.parse(String(text))
+      } catch (error) {
+        parsed = null
+      }
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        root.cached = {
+          cores: Number(parsed.cores) || 0,
+          ram: parsed.ram ? String(parsed.ram) : "",
+          started: Number(parsed.started) || 0,
+          lastSeen: Number(parsed.lastSeen) || 0
+        }
+      }
+    }
+    root.cacheLoaded = true
+  }
+
+  // Called once per sample. State.cacheFrom decides what the cache should
+  // hold; this only decides when to put it on disk.
+  function updateCache(now) {
+    var next = State.cacheFrom(root.sample, root.cached, now)
+    if (!next || next === root.cached) return
+    var previous = root.cached
+    root.cached = next
+    if (!root.cacheLoaded) return
+    var shapeMoved = !previous || previous.cores !== next.cores
+      || previous.ram !== next.ram || previous.started !== next.started
+    if (!shapeMoved && now - root.cacheWrittenAt < 60000) return
+    root.cacheWrittenAt = now
+    cacheFile.setText(JSON.stringify(next, null, 2) + "\n")
+  }
+
+  Component.onCompleted: {
+    mkdirProc.running = true
+    // Give mkdir a tick, then read whatever is already there. FileView's
+    // implicit preload may have raced the directory into existence.
+    Qt.callLater(function () { cacheFile.reload() })
+  }
 
   // --------------------------------------------------------------- the mock
   // Debug hook, driven by the panel's `mock` IPC method. While `mockLine` is
@@ -150,14 +251,19 @@ QtObject {
     // is anything the state machine branches on — QEMU appearing or going
     // away (start and stop landing), the freeze flipping, the VM being
     // installed or removed.
+    // One exception: Stop on a paused VM unpauses first (see stop()), so the
+    // freeze flipping off is that stop's own doing, not a state change that
+    // should end it — the card stays at "stopping" until QEMU is gone.
+    var stopping = root.desired && root.desired.action === "stop"
     var moved = (!!next.pid !== !!previous.pid)
-      || (next.frozen !== previous.frozen)
+      || (next.frozen !== previous.frozen && !stopping)
       || (next.installed !== previous.installed)
     if (moved) root.clearDesired()
     if (next.pid) root.checkUnit()
     else root.sessionOpen = false
 
     root.nowMs = Date.now()
+    root.updateCache(root.nowMs)
   }
 
   property Process sampleProc: Process {
@@ -365,9 +471,21 @@ QtObject {
   // Short and non-interactive, so it runs as a plain Process with its stderr
   // collected; `omarchy-windows-vm stop` does one `pkexec … __priv down`.
 
+  // Open question 3: `docker compose down` on a frozen container sends
+  // SIGTERM into a process that cannot answer, waits out the full 2 min grace
+  // period and then SIGKILLs it — an unclean Windows shutdown. So a paused VM
+  // is unpaused first and only stopped once that worked; a failed unpause
+  // aborts the stop. (Stop is also disabled while a pause or unpause of the
+  // user's own is in flight: both processes count in `busy`, and every button
+  // reads `busy`.)
   function stop() {
     if (root.busy) return
     root.setDesired("stop")
+    if (root.sample.frozen) {
+      root.stopAfterResume = true
+      resumeProc.running = true
+      return
+    }
     stopProc.running = true
   }
 
@@ -399,19 +517,91 @@ QtObject {
     onExited: function (code) { root.refresh() }
   }
 
-  // ---------------------------------------------------------------- phase 4
+  // ------------------------------------------------------- pause and resume
+  // The one place the docker CLI is used, and the only one that needs the
+  // container's name: `pkexec /usr/bin/docker pause|unpause omarchy-windows`,
+  // character for character the command lines polkit/49-omawin.rules.in
+  // allows, so the rule makes them promptless and anything else still
+  // prompts. Both are short and non-interactive, so they run as plain
+  // Processes with their stderr collected, exactly like stop.
 
-  // TODO(phase 4): xdg-open http://127.0.0.1:8006 — the dockur web viewer,
-  // behind basic auth with the VM's own user and password (PROTECT: "Y").
-  // The only way to watch a first install. Its button is drawn disabled.
-  function openWeb() {}
+  // Set when Stop unpauses first (see stop()): the stop follows the unpause
+  // rather than the user pressing Resume.
+  property bool stopAfterResume: false
 
-  // TODO(phase 4): xdg-open ~/Windows — the /shared bind. Its button is drawn
-  // disabled.
-  function openShared() {}
+  function pause() {
+    if (root.busy) return
+    root.clearDesired()
+    pauseProc.running = true
+  }
 
-  // TODO(phase 4): Pause/Resume through
-  // `pkexec /usr/bin/docker pause|unpause omarchy-windows`, and the
-  // {cores, ram, lastRun} cache under $XDG_STATE_HOME/omawin/ that fills the
-  // stopped card's pill, "Last run" and the ready card's "Uptime".
+  function resume() {
+    if (root.busy) return
+    root.clearDesired()
+    root.stopAfterResume = false
+    resumeProc.running = true
+  }
+
+  property Process pauseProc: Process {
+    command: ["pkexec", "/usr/bin/docker", "pause", "omarchy-windows"]
+    environment: ({ LC_ALL: "C" })
+    stderr: StdioCollector { id: pauseErr; waitForEnd: true }
+    onExited: function (code) {
+      if (code !== 0) {
+        var message = root.lastLine(pauseErr.text)
+        if (root.dismissed(message)) root.clearDesired()
+        else root.fail(message || "docker pause exited with status " + code)
+      }
+      root.refresh()
+    }
+  }
+
+  property Process resumeProc: Process {
+    command: ["pkexec", "/usr/bin/docker", "unpause", "omarchy-windows"]
+    environment: ({ LC_ALL: "C" })
+    stderr: StdioCollector { id: resumeErr; waitForEnd: true }
+    onExited: function (code) {
+      var message = root.lastLine(resumeErr.text)
+      var thenStop = root.stopAfterResume
+      root.stopAfterResume = false
+      if (code !== 0) {
+        // Also aborts a Stop that was waiting on this unpause: clearDesired
+        // drops the "stop" transient, fail() replaces it with the message.
+        if (root.dismissed(message)) root.clearDesired()
+        else root.fail(message || "docker unpause exited with status " + code)
+        root.refresh()
+        return
+      }
+      if (thenStop) {
+        stopProc.running = true
+        return
+      }
+      root.refresh()
+    }
+  }
+
+  // ---------------------------------------------------- the two xdg-opens
+  // Neither is privileged and neither changes the VM, so neither counts in
+  // `busy` and neither can fail the card: the handler is somebody else's
+  // window from here on.
+
+  // The dockur web viewer, behind basic auth with the VM's own user and
+  // password (the compose sets PROTECT: "Y"). The only way to watch a first
+  // install, which is why its button is live while the VM boots.
+  function openWeb() {
+    webProc.running = true
+  }
+
+  property Process webProc: Process {
+    command: ["xdg-open", "http://127.0.0.1:8006"]
+  }
+
+  // ~/Windows, the /shared bind — the guest sees it as a network drive.
+  function openShared() {
+    sharedProc.running = true
+  }
+
+  property Process sharedProc: Process {
+    command: ["xdg-open", root.home + "/Windows"]
+  }
 }

@@ -78,11 +78,6 @@ Panel {
     return !service.busy && !!service.actions[name]
   }
 
-  // Pause, Resume, Web viewer and Shared folder are drawn from phase 2 but
-  // wired in phase 4; until then they are visible and dead, so the card keeps
-  // the mockup's shape instead of reflowing when they arrive.
-  readonly property bool phase4: false
-
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -101,9 +96,12 @@ Panel {
     function show(): void { root.open() }
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
-    // The headless check: the painted state plus the sampler line it came
-    // from, e.g. "stopped installed=1 docker=active pid= frozen= …".
-    function status(): string { return service.state + " " + service.sampleLine }
+    // The headless check: the painted state, the sampler line it came from
+    // and the bar tooltip, e.g. "stopped installed=1 docker=active pid= … |
+    // Windows VM · STOPPED · 4 cores · 16G".
+    function status(): string {
+      return service.state + " " + service.sampleLine + " | " + service.tooltip
+    }
     // Debug only: stand a sampler line (an RDP verdict, "ok" or "no", and a
     // pending transient, "start" or "stop") in for the real ones, so every
     // face of the card can be looked at with the VM switched off. An empty
@@ -292,17 +290,19 @@ Panel {
             width: (parent.width - parent.spacing) / 2
             spacing: Style.spacing.labelGap
 
+            // Cores and RAM come from the cache while the VM is off, the
+            // same values the hero's pill shows through service.detail.
             InfoPair {
               visible: root.vmState === "stopped"
               label: "Cores"
-              value: service.sample.cores ? String(service.sample.cores) : "—"
-              dimValue: !service.sample.cores
+              value: service.coresText
+              dimValue: service.coresText === "—"
             }
             InfoPair {
               visible: root.vmState === "stopped"
               label: "RAM"
-              value: service.sample.ram ? service.sample.ram : "—"
-              dimValue: !service.sample.ram
+              value: service.ramText
+              dimValue: service.ramText === "—"
             }
             InfoPair {
               visible: root.vmState === "booting"
@@ -323,8 +323,10 @@ Panel {
             InfoPair {
               visible: root.vmState === "ready"
               label: "Uptime"
-              value: "—"
-              dimValue: true
+              // Counts up while the card is open: the Service's tick timer
+              // runs whenever the panel is open on a live VM.
+              value: service.uptimeText !== "" ? service.uptimeText : "—"
+              dimValue: service.uptimeText === ""
             }
           }
 
@@ -341,7 +343,7 @@ Panel {
             InfoPair {
               visible: root.vmState === "stopped"
               label: "Last run"
-              value: "—"
+              value: service.lastRunText
               dimValue: true
             }
             InfoPair {
@@ -451,7 +453,7 @@ Panel {
               width: stoppedRow.cellWidth
               iconText: root.folderGlyph
               text: "Shared folder"
-              allowed: root.phase4 && root.can("shared")
+              allowed: root.can("shared")
               onClicked: service.openShared()
             }
           }
@@ -472,7 +474,7 @@ Panel {
               width: transientRow.cellWidth
               iconText: root.globeGlyph
               text: "Web viewer"
-              allowed: root.phase4 && root.can("web")
+              allowed: root.can("web")
               onClicked: service.openWeb()
             }
           }
@@ -485,7 +487,7 @@ Panel {
               width: transientRow2.cellWidth
               iconText: root.folderGlyph
               text: "Shared folder"
-              allowed: root.phase4 && root.can("shared")
+              allowed: root.can("shared")
               onClicked: service.openShared()
             }
           }
@@ -527,7 +529,8 @@ Panel {
               width: readyRow.cellWidth
               iconText: root.pauseGlyph
               text: "Pause"
-              allowed: root.phase4 && root.can("pause")
+              allowed: root.can("pause")
+              onClicked: service.pause()
             }
             ActionButton {
               width: readyRow.cellWidth
@@ -547,7 +550,8 @@ Panel {
               width: pausedRow.cellWidth
               iconText: root.playGlyph
               text: "Resume"
-              allowed: root.phase4 && root.can("resume")
+              allowed: root.can("resume")
+              onClicked: service.resume()
             }
             ActionButton {
               width: pausedRow.cellWidth
@@ -566,7 +570,7 @@ Panel {
               width: pausedRow2.cellWidth
               iconText: root.folderGlyph
               text: "Shared folder"
-              allowed: root.phase4 && root.can("shared")
+              allowed: root.can("shared")
               onClicked: service.openShared()
             }
           }
@@ -580,14 +584,14 @@ Panel {
               width: liveRow2.cellWidth
               iconText: root.globeGlyph
               text: "Web viewer"
-              allowed: root.phase4 && root.can("web")
+              allowed: root.can("web")
               onClicked: service.openWeb()
             }
             ActionButton {
               width: liveRow2.cellWidth
               iconText: root.folderGlyph
               text: "Shared folder"
-              allowed: root.phase4 && root.can("shared")
+              allowed: root.can("shared")
               onClicked: service.openShared()
             }
           }

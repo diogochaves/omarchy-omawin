@@ -5,10 +5,15 @@ import { load } from './helpers.mjs'
 const State = load('lib/State.js')
 
 const CID = '3fff20be218cd2379160eb8acf4144ac6aafd0dacbf17f78f2e4f020466084b9'
-const RUNNING = 'installed=1 docker=active pid=1360395 frozen=0 cores=4 ram=16G web=401 cid=' + CID
+// tests/fixtures/generate.sh's clock: btime + 6321 s.
+const STARTED = 1789186123
+const RUNNING = 'installed=1 docker=active pid=1360395 frozen=0 cores=4 ram=16G web=401 cid=' +
+  CID + ' started=' + STARTED
 const PAUSED = RUNNING.replace('frozen=0', 'frozen=1')
-const STOPPED = 'installed=1 docker=active pid= frozen= cores= ram= web=000 cid='
-const ABSENT = 'installed=0 docker=active pid= frozen= cores= ram= web=000 cid='
+const STOPPED = 'installed=1 docker=active pid= frozen= cores= ram= web=000 cid= started='
+const ABSENT = 'installed=0 docker=active pid= frozen= cores= ram= web=000 cid= started='
+// 1 h 12 m after the VM started, to the second: the mockup's tooltip.
+const NOW = (STARTED + 72 * 60) * 1000
 
 const NONE = { action: null, since: 0, failed: '' }
 const OK = { ok: true, at: 1000 }
@@ -17,30 +22,32 @@ const NO = { ok: false, at: 1000 }
 test('parseSample reads a running line', () => {
   assert.deepEqual(State.parseSample(RUNNING), {
     installed: true, docker: 'active', pid: 1360395, frozen: false,
-    cores: 4, ram: '16G', web: 401, cid: CID
+    cores: 4, ram: '16G', web: 401, cid: CID, started: STARTED
   })
 })
 
 test('parseSample reads a stopped line, empty values and all', () => {
   assert.deepEqual(State.parseSample(STOPPED), {
     installed: true, docker: 'active', pid: 0, frozen: false,
-    cores: 0, ram: '', web: 0, cid: ''
+    cores: 0, ram: '', web: 0, cid: '', started: 0
   })
 })
 
 test('parseSample reads a not-installed line', () => {
   assert.deepEqual(State.parseSample(ABSENT), {
     installed: false, docker: 'active', pid: 0, frozen: false,
-    cores: 0, ram: '', web: 0, cid: ''
+    cores: 0, ram: '', web: 0, cid: '', started: 0
   })
 })
 
 test('parseSample survives garbage, a truncated line and no line at all', () => {
   const empty = {
     installed: false, docker: '', pid: 0, frozen: false,
-    cores: 0, ram: '', web: 0, cid: ''
+    cores: 0, ram: '', web: 0, cid: '', started: 0
   }
   for (const bad of ['', '\n', 'bash: line 12: /proc: no such file', 'installed=1 docker=active',
+    // A line from a phase 1-3 helper: no started= key, so not a sample.
+    'installed=1 docker=active pid= frozen= cores= ram= web=000 cid=',
     undefined, null, 42]) {
     assert.deepEqual(State.parseSample(bad), empty, JSON.stringify(bad))
   }
@@ -219,7 +226,7 @@ test('sampleInterval backs off only when nothing is installed', () => {
 
 test('tooltip names the state, a dead docker and the failure', () => {
   const running = State.parseSample(RUNNING)
-  assert.equal(State.tooltip('ready', running, NONE), 'Windows VM · READY')
+  assert.equal(State.tooltip('ready', running, NONE), 'Windows VM · READY · 4 cores · 16G')
   assert.equal(
     State.tooltip('stopped', State.parseSample(STOPPED.replace('docker=active', 'docker=inactive')), NONE),
     'Windows VM · STOPPED · docker.service is inactive'
@@ -232,4 +239,82 @@ test('tooltip names the state, a dead docker and the failure', () => {
   assert.equal(State.tooltip('not-installed', State.parseSample(''), NONE),
     'Windows VM · NOT INSTALLED')
   assert.equal(State.tooltip('stopped', null, null), 'Windows VM · STOPPED')
+})
+
+test('tooltip appends the shape and, while the VM runs, the uptime', () => {
+  const running = State.parseSample(RUNNING)
+  // The mockup's tooltip, with this widget's uppercase status label.
+  assert.equal(State.tooltip('ready', running, NONE, null, NOW),
+    'Windows VM · READY · 4 cores · 16G · up 1h 12m')
+  // A stopped VM has no uptime, but the cache still knows its shape.
+  assert.equal(State.tooltip('stopped', State.parseSample(STOPPED), NONE,
+    { cores: 4, ram: '16G', started: STARTED, lastSeen: NOW }, NOW),
+    'Windows VM · STOPPED · 4 cores · 16G')
+  // A helper that could not read starttime: shape, no uptime.
+  assert.equal(State.tooltip('ready', State.parseSample(RUNNING.replace('started=' + STARTED, 'started=')),
+    NONE, null, NOW), 'Windows VM · READY · 4 cores · 16G')
+  // A failure replaces both: that message is the whole tooltip.
+  assert.equal(State.tooltip('failed', running,
+    { action: null, since: 0, failed: 'refusing an unsafe VM mount anchor' }, null, NOW),
+    'Windows VM · FAILED · refusing an unsafe VM mount anchor')
+  // A dead docker still gets its say, before the failure.
+  assert.equal(State.tooltip('failed', State.parseSample(RUNNING.replace('docker=active', 'docker=inactive')),
+    { action: null, since: 0, failed: 'boom' }, null, NOW),
+    'Windows VM · FAILED · docker.service is inactive · boom')
+})
+
+test('uptime counts from the epoch second the sampler read', () => {
+  const at = seconds => (STARTED + seconds) * 1000
+  assert.equal(State.uptime(STARTED, at(72 * 60)), '1h 12m')
+  assert.equal(State.uptime(STARTED, at(42 * 60)), '42m')
+  assert.equal(State.uptime(STARTED, at(59)), '0m')
+  assert.equal(State.uptime(STARTED, at(0)), '0m')
+  assert.equal(State.uptime(STARTED, at(3600)), '1h 0m')
+  assert.equal(State.uptime(STARTED, at(3 * 86400 + 4 * 3600 + 59 * 60)), '3d 4h')
+  // Unknown, and a clock that went backwards over a suspend or an NTP step.
+  assert.equal(State.uptime(0, at(600)), '')
+  assert.equal(State.uptime(undefined, at(600)), '')
+  assert.equal(State.uptime(STARTED, at(-600)), '0m')
+  assert.equal(State.uptime(STARTED, undefined), '0m')
+})
+
+test('lastRun is a clock time today, a weekday this week, a date before that', () => {
+  // A Saturday 15:00, so "3 days ago" lands on a Wednesday.
+  const now = new Date(2026, 8, 12, 15, 0, 0).getTime()
+  const ago = ms => ({ lastSeen: now - ms })
+  assert.equal(State.lastRun(ago(5 * 3600e3 + 45 * 60e3), now), '09:15')
+  assert.equal(State.lastRun(ago(15 * 3600e3), now), '00:00')
+  assert.equal(State.lastRun(ago(3 * 86400e3), now), 'Wed 15:00')
+  assert.equal(State.lastRun(ago(6 * 86400e3), now), 'Sun 15:00')
+  assert.equal(State.lastRun(ago(30 * 86400e3), now), '13 Aug')
+  assert.equal(State.lastRun(null, now), '—')
+  assert.equal(State.lastRun({}, now), '—')
+  assert.equal(State.lastRun({ lastSeen: 0 }, now), '—')
+})
+
+test('cacheFrom writes a running sample and leaves a stopped one alone', () => {
+  const running = State.parseSample(RUNNING)
+  const stopped = State.parseSample(STOPPED)
+  assert.deepEqual(State.cacheFrom(running, null, NOW),
+    { cores: 4, ram: '16G', started: STARTED, lastSeen: NOW })
+  // No pid: the previous cache comes back untouched, object and all, so a
+  // stopped VM keeps its shape and its "Last run".
+  const previous = { cores: 4, ram: '16G', started: STARTED, lastSeen: NOW }
+  assert.equal(State.cacheFrom(stopped, previous, NOW + 60000), previous)
+  assert.equal(State.cacheFrom(stopped, null, NOW), null)
+  assert.equal(State.cacheFrom(null, previous, NOW), previous)
+  // lastSeen advances with every running sample; that is what "Last run" is.
+  assert.equal(State.cacheFrom(running, previous, NOW + 5000).lastSeen, NOW + 5000)
+  // A running sample that somehow lost its shape keeps the cached one.
+  const shapeless = State.parseSample(RUNNING.replace('cores=4', 'cores=').replace('ram=16G', 'ram='))
+  assert.deepEqual(State.cacheFrom(shapeless, previous, NOW),
+    { cores: 4, ram: '16G', started: STARTED, lastSeen: NOW })
+})
+
+test('the cache round-trips through JSON, which is how it is stored', () => {
+  const written = State.cacheFrom(State.parseSample(RUNNING), null, NOW)
+  const read = JSON.parse(JSON.stringify(written))
+  assert.deepEqual(read, written)
+  assert.equal(State.detail(State.parseSample(STOPPED), read), '4 cores · 16G')
+  assert.equal(State.lastRun(read, NOW), State.lastRun(written, NOW))
 })

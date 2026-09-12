@@ -9,26 +9,29 @@ lines. Nobody has to join the `docker` group.
 
 ## Status
 
-Phases 1 to 3 are in: the sampler, the widget and the polkit rule.
+Phases 1 to 4 are in: the sampler, the widget, the polkit rule and the rest
+of the actions.
 
 - `helpers/vm-state.sh`, `helpers/rdp-probe.sh` and the pure state machine in
-  `lib/State.js`, with `node --test tests/` over all three.
+  `lib/State.js`, with `node --test tests/` over all three. The sampler also
+  reports `started=`, the QEMU process's start time in epoch seconds, read
+  from `/proc/<pid>/stat` field 22 and `/proc/stat`'s `btime` — no `ps`, no
+  fork — which is where "Uptime" comes from.
 - `Service.qml` — the 5 s/30 s state sampler, the 3 s/30 s RDP probe, the
   transients, the sticky failure, and the actions: Start and Connect through
   `helpers/launch.sh` (the transient user unit `omawin-launch`, so the RDP
   session survives a bar reload) with the outcome read back by
-  `helpers/launch-result.sh`, Stop through `omarchy-windows-vm stop`, Install
-  through Omarchy's floating-terminal wrapper.
+  `helpers/launch-result.sh`, Stop through `omarchy-windows-vm stop`,
+  Pause/Resume through `pkexec /usr/bin/docker pause|unpause omarchy-windows`,
+  Web viewer and Shared folder through `xdg-open`, Install through Omarchy's
+  floating-terminal wrapper — plus the cache below.
 - `Panel.qml` — the bar glyph (state by colour, a pause badge, a pulse while
-  the VM is coming up or going down, `bar.urgent` on a failure, the state in
-  the tooltip, middle click = Start/Connect) and the popup card: one face per
-  state, drawn with the shell's own `PopupCard`/`PanelHero`/`Button` kit.
+  the VM is coming up or going down, `bar.urgent` on a failure, the state,
+  the VM's shape and its uptime in the tooltip, middle click =
+  Start/Connect) and the popup card: one face per state, drawn with the
+  shell's own `PopupCard`/`PanelHero`/`Button` kit.
 - `polkit/49-omawin.rules.in` and `setup` — the rule that makes the cycle
   passwordless, and the script that installs it.
-
-Not yet, and drawn disabled where the card has a place for them: Pause,
-Resume, Web viewer, Shared folder, the cores/RAM cache behind a stopped VM's
-pill, "Last run" and "Uptime" (phase 4).
 
 ## Try it
 
@@ -51,9 +54,39 @@ else about the layout goes through `omarchy bar` too — never hand-edit
 | Method | Does |
 |--------|------|
 | `open` / `close` / `toggle` / `show` / `hide` | the popup |
-| `status` | one line: the painted state plus the `vm-state.sh` line behind it, e.g. `stopped installed=1 docker=active pid= frozen= cores= ram= web=000 cid=` |
+| `status` | one line: the painted state, the `vm-state.sh` line behind it and the bar tooltip, e.g. `stopped installed=1 docker=active pid= frozen= cores= ram= web=000 cid= started= \| Windows VM · STOPPED · 4 cores · 16G` |
 | `fail <text>` | **debug.** Paints the failed card with `<text>` as the message, without breaking anything to get there. Sticky like a real failure — cleared by the next successful action or state change, or at once with `fail ""`. |
 | `mock <line> [probe] [action]` | **debug.** Stands `<line>` in for `vm-state.sh`, `probe` (`ok`/`no`) in for the RDP probe and `action` (`start`/`stop`) in for a pending transient, so every face of the card can be looked at with the VM switched off. `mock "" "" ""` (all three arguments are required by the IPC) hands the widget back to the real sampler and drops the mocked transient. |
+
+## Pause and Resume
+
+Pause is `docker pause`: a cgroup freeze, so the guest stops using CPU but
+keeps its RAM, and the compose's `-rtc base=localtime,clock=host,driftfix=slew`
+lets the guest clock catch up on resume. It is not a suspend to disk and it
+survives neither a reboot nor a `stop`.
+
+**Stop on a paused VM unpauses it first.** `docker compose down` would send
+SIGTERM to a frozen process, wait out the full two-minute grace period and
+then SIGKILL it — an unclean Windows shutdown. So Stop runs `unpause` and only
+then `omarchy-windows-vm stop`, and an unpause that fails aborts the stop
+instead of leaving it to time out. Every button, Stop included, is disabled
+while a pause or unpause is in flight.
+
+## Cache
+
+`$XDG_STATE_HOME/omawin/state.json` (`~/.local/state/omawin/state.json` by
+default) holds one object written from the last running sample:
+
+```json
+{ "cores": 4, "ram": "16G", "started": 1789232550, "lastSeen": 1789236870124 }
+```
+
+That is the whole file: the VM's shape, when the last seen run of it started
+(epoch seconds), and when it was last seen running (epoch milliseconds). It is
+what the stopped card's `4 cores · 16G` pill, its Cores/RAM readings and its
+"Last run" print — nothing else reads it and nothing else writes it. Deleting
+it is safe: those four readings go blank until the VM next runs. It is
+rewritten when the shape changes and at most once a minute otherwise.
 
 ## Polkit rule
 
