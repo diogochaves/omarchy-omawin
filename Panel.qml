@@ -272,6 +272,8 @@ Panel {
               return "No Windows VM on this machine. The installer asks for RAM, cores, disk size and a login, then downloads Windows 11 (10–15 min). It runs in a floating terminal."
             if (root.vmState === "starting")
               return "Bringing the container up. Omarchy may ask for authorisation."
+            if (root.vmState === "booting" && service.stopHeldByLauncher)
+              return "The launcher holds the VM while Windows boots; Stop unlocks once it answers on RDP."
             if (root.vmState === "paused")
               return "Frozen in memory. Resume picks up where it left off; the guest clock resyncs from the host."
             if (root.vmState === "stopping")

@@ -58,13 +58,25 @@ QtObject {
   // While the omawin-launch unit is alive an RDP window is already open (or
   // on its way), and `launch -k` would only tell us so: Start and Connect
   // are switched off for that time rather than left as silent no-ops.
+  //
+  // Stop is switched off too while that unit is still booting the VM. The
+  // launcher's `up_wait` holds the VM lock until dockur reports QEMU up, and
+  // a `stop` pressed meanwhile does not fail — it queues on the lock, shows a
+  // frozen "stopping" card for minutes, and then shuts Windows down right
+  // under the RDP window that has just opened. Once the guest answers on RDP
+  // the lock is long released and Stop is safe again.
   readonly property var actions: {
     var allowed = State.allowedActions(root.state, root.sample, root.base)
     if (root.sessionOpen) {
-      allowed = Object.assign({}, allowed, { start: false, connect: false })
+      allowed = Object.assign({}, allowed, {
+        start: false, connect: false,
+        stop: allowed.stop && root.state !== "booting"
+      })
     }
     return allowed
   }
+  // The reason the booting card gives for its greyed-out Stop.
+  readonly property bool stopHeldByLauncher: root.sessionOpen && root.state === "booting"
   readonly property string label: State.label(root.state)
   // No cores/RAM cache yet — that is phase 4, so a stopped VM shows nothing
   // and only a running one fills the pill.
