@@ -559,12 +559,21 @@ QtObject {
     }
   }
 
+  // Resume unfreezes and then reopens the RDP window, because Pause closed it:
+  // "Resume" that left the user staring at no window and needing Connect too
+  // was the confusing half of the pause cycle. The reconnect is the same
+  // launch unit Connect uses; up_wait sees the container already running and
+  // goes straight to xfreerdp. (A Resume that is really the first half of a
+  // Stop, stopAfterResume, reopens nothing — it stops instead.)
   function resume() {
     if (root.busy) return
     root.clearDesired()
     root.stopAfterResume = false
+    root.reconnectAfterResume = true
     resumeProc.running = true
   }
+
+  property bool reconnectAfterResume: false
 
   property Process pauseProc: Process {
     command: ["pkexec", "/usr/bin/docker", "pause", "omarchy-windows"]
@@ -587,7 +596,9 @@ QtObject {
     onExited: function (code) {
       var message = root.lastLine(resumeErr.text)
       var thenStop = root.stopAfterResume
+      var thenConnect = root.reconnectAfterResume
       root.stopAfterResume = false
+      root.reconnectAfterResume = false
       if (code !== 0) {
         // Also aborts a Stop that was waiting on this unpause: clearDesired
         // drops the "stop" transient, fail() replaces it with the message.
@@ -598,6 +609,10 @@ QtObject {
       }
       if (thenStop) {
         stopProc.running = true
+        return
+      }
+      if (thenConnect) {
+        root.connect()
         return
       }
       root.refresh()
