@@ -33,6 +33,7 @@ function rulesDir(t) {
 
 const RULE = '49-omawin.rules'
 const PROBE = '49-omawin-probe.rules'
+const PROBE_SRC = '49-omawin-probe.rules.in'
 const EXEC = 'org.freedesktop.policykit.exec'
 
 // The rule is a plain script that calls polkit.addRule once. Evaluate it with
@@ -66,7 +67,7 @@ const ALLOWED = [
 
 test('polkit --user alice renders the rule with no placeholder left', t => {
   const dir = rulesDir(t)
-  const { status, out } = setup(['polkit', '--user', 'alice'], { dir })
+  const { status, out } = setup(['polkit', '--yes', '--user', 'alice'], { dir })
   assert.equal(status, 0, out)
 
   const file = path.join(dir, RULE)
@@ -87,7 +88,7 @@ test('polkit --user alice renders the rule with no placeholder left', t => {
 
 test('the rendered rule says YES to exactly the five command lines', t => {
   const dir = rulesDir(t)
-  assert.equal(setup(['polkit', '--user', 'alice'], { dir }).status, 0)
+  assert.equal(setup(['polkit', '--yes', '--user', 'alice'], { dir }).status, 0)
   const rule = loadRule(path.join(dir, RULE))
 
   for (const [program, commandLine] of ALLOWED) {
@@ -134,8 +135,9 @@ test('the rendered rule says YES to exactly the five command lines', t => {
 })
 
 test('--probe installs a rule that allows only __priv status on an exact match', t => {
+  // (the probe is rendered for a user like the real rule, hence --user)
   const dir = rulesDir(t)
-  const { status, out } = setup(['polkit', '--probe'], { dir })
+  const { status, out } = setup(['polkit', '--yes', '--probe', '--user', 'alice'], { dir })
   assert.equal(status, 0, out)
   assert.match(out, /__priv status extra/)
 
@@ -146,7 +148,7 @@ test('--probe installs a rule that allows only __priv status on an exact match',
     commandLine: '/usr/bin/omarchy-windows-vm __priv status'
   }
   assert.equal(ask(rule, status_), 'yes', 'the one probe command line')
-  assert.equal(ask(rule, { ...status_, user: 'bob' }), 'yes', 'the probe is not per user')
+  assert.equal(ask(rule, { ...status_, user: 'bob' }), undefined, 'the probe is per user too')
   assert.equal(ask(rule, { ...status_, commandLine: status_.commandLine + ' extra' }), undefined)
   assert.equal(ask(rule, { ...status_, commandLine: '/usr/bin/omarchy-windows-vm __priv down' }), undefined)
   assert.equal(ask(rule, { ...status_, commandLine: '/usr/bin/omarchy-windows-vm __priv up_wait' }), undefined)
@@ -156,19 +158,29 @@ test('--probe installs a rule that allows only __priv status on an exact match',
 
 test('installing the real rule takes the probe back out', t => {
   const dir = rulesDir(t)
-  assert.equal(setup(['polkit', '--probe'], { dir }).status, 0)
-  const { status, out } = setup(['polkit', '--user', 'alice'], { dir })
+  assert.equal(setup(['polkit', '--yes', '--probe', '--user', 'alice'], { dir }).status, 0)
+  const { status, out } = setup(['polkit', '--yes', '--user', 'alice'], { dir })
   assert.equal(status, 0, out)
   assert.match(out, /removed .*49-omawin-probe\.rules/)
   assert.equal(fs.existsSync(path.join(dir, PROBE)), false)
   assert.equal(fs.existsSync(path.join(dir, RULE)), true)
 })
 
+test('without --yes and without a terminal nothing is installed', t => {
+  const dir = rulesDir(t)
+  const { status, out } = setup(['polkit', '--user', 'alice'], { dir })
+  assert.notEqual(status, 0)
+  assert.match(out, /About to install this file, as root/)
+  assert.match(out, /subject\.user !== "alice"/, 'the rendered rule is shown before the refusal')
+  assert.match(out, /re-run with --yes/)
+  assert.deepEqual(fs.readdirSync(dir), [])
+})
+
 test('installing twice is idempotent', t => {
   const dir = rulesDir(t)
-  assert.equal(setup(['polkit', '--user', 'alice'], { dir }).status, 0)
+  assert.equal(setup(['polkit', '--yes', '--user', 'alice'], { dir }).status, 0)
   const first = fs.readFileSync(path.join(dir, RULE), 'utf8')
-  const { status } = setup(['polkit', '--user', 'alice'], { dir })
+  const { status } = setup(['polkit', '--yes', '--user', 'alice'], { dir })
   assert.equal(status, 0)
   assert.equal(fs.readFileSync(path.join(dir, RULE), 'utf8'), first)
   assert.deepEqual(fs.readdirSync(dir), [RULE])
@@ -176,17 +188,17 @@ test('installing twice is idempotent', t => {
 
 test('--remove takes both files out, and says so only for what was there', t => {
   const dir = rulesDir(t)
-  assert.equal(setup(['polkit', '--probe'], { dir }).status, 0)
-  assert.equal(setup(['polkit', '--user', 'alice'], { dir }).status, 0)
-  fs.copyFileSync(path.join(root, 'polkit', PROBE), path.join(dir, PROBE))
+  assert.equal(setup(['polkit', '--yes', '--probe', '--user', 'alice'], { dir }).status, 0)
+  assert.equal(setup(['polkit', '--yes', '--user', 'alice'], { dir }).status, 0)
+  fs.copyFileSync(path.join(root, 'polkit', PROBE_SRC), path.join(dir, PROBE))
 
-  const { status, out } = setup(['polkit', '--remove'], { dir })
+  const { status, out } = setup(['polkit', '--yes', '--remove'], { dir })
   assert.equal(status, 0, out)
   assert.match(out, /removed .*49-omawin\.rules/)
   assert.match(out, /removed .*49-omawin-probe\.rules/)
   assert.deepEqual(fs.readdirSync(dir), [])
 
-  const again = setup(['polkit', '--remove'], { dir })
+  const again = setup(['polkit', '--yes', '--remove'], { dir })
   assert.equal(again.status, 0)
   assert.match(again.out, /nothing to remove/)
 })
@@ -194,15 +206,15 @@ test('--remove takes both files out, and says so only for what was there', t => 
 test('an unusable target user is refused, nothing is written', t => {
   const dir = rulesDir(t)
 
-  const asRoot = setup(['polkit', '--user', 'root'], { dir })
+  const asRoot = setup(['polkit', '--yes', '--user', 'root'], { dir })
   assert.notEqual(asRoot.status, 0)
   assert.match(asRoot.out, /refusing to write a rule for root/)
 
-  const nobody = setup(['polkit'], { dir })
+  const nobody = setup(['polkit', '--yes'], { dir })
   assert.notEqual(nobody.status, 0)
   assert.match(nobody.out, /no target user: pass --user NAME/)
 
-  const nonsense = setup(['polkit', '--user', 'Alice Smith'], { dir })
+  const nonsense = setup(['polkit', '--yes', '--user', 'Alice Smith'], { dir })
   assert.notEqual(nonsense.status, 0)
   assert.match(nonsense.out, /not a plausible user name/)
 
@@ -212,16 +224,16 @@ test('an unusable target user is refused, nothing is written', t => {
 test('--status reports the presence of both files and who the rule names', t => {
   const dir = rulesDir(t)
 
-  const empty = setup(['polkit', '--status'], { dir })
+  const empty = setup(['polkit', '--yes', '--status'], { dir })
   assert.equal(empty.status, 0, empty.out)
   assert.match(empty.out, /absent .*49-omawin\.rules/)
   assert.match(empty.out, /absent .*49-omawin-probe\.rules/)
 
-  assert.equal(setup(['polkit', '--probe'], { dir }).status, 0)
-  assert.equal(setup(['polkit', '--user', 'alice'], { dir }).status, 0)
-  fs.copyFileSync(path.join(root, 'polkit', PROBE), path.join(dir, PROBE))
+  assert.equal(setup(['polkit', '--yes', '--probe', '--user', 'alice'], { dir }).status, 0)
+  assert.equal(setup(['polkit', '--yes', '--user', 'alice'], { dir }).status, 0)
+  fs.copyFileSync(path.join(root, 'polkit', PROBE_SRC), path.join(dir, PROBE))
 
-  const both = setup(['polkit', '--status'], { dir })
+  const both = setup(['polkit', '--yes', '--status'], { dir })
   assert.equal(both.status, 0, both.out)
   assert.match(both.out, /present .*49-omawin\.rules \(user: alice\)/)
   assert.match(both.out, /present .*49-omawin-probe\.rules/)
@@ -229,12 +241,12 @@ test('--status reports the presence of both files and who the rule names', t => 
 
 test('SUDO_USER is the default target, and --user wins over it', t => {
   const dir = rulesDir(t)
-  assert.equal(setup(['polkit'], { dir, env: { SUDO_USER: 'carol' } }).status, 0)
+  assert.equal(setup(['polkit', '--yes'], { dir, env: { SUDO_USER: 'carol' } }).status, 0)
   assert.match(fs.readFileSync(path.join(dir, RULE), 'utf8'),
     /subject\.user !== "carol"/)
 
   assert.equal(
-    setup(['polkit', '--user', 'alice'], { dir, env: { SUDO_USER: 'carol' } }).status, 0)
+    setup(['polkit', '--yes', '--user', 'alice'], { dir, env: { SUDO_USER: 'carol' } }).status, 0)
   assert.match(fs.readFileSync(path.join(dir, RULE), 'utf8'),
     /subject\.user !== "alice"/)
 })

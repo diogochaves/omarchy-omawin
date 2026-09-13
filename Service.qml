@@ -155,7 +155,7 @@ QtObject {
   property double cacheWrittenAt: 0
 
   property Process mkdirProc: Process {
-    command: ["mkdir", "-p", root.stateDir]
+    command: ["/usr/bin/mkdir", "-p", "-m", "700", root.stateDir]
   }
 
   property FileView cacheFile: FileView {
@@ -170,20 +170,31 @@ QtObject {
     onLoadFailed: root.cacheLoaded = true
   }
 
+  // The file is ours, under the user's own state directory, but it is read
+  // like any other input: bounded in size, parsed, and every field checked
+  // for the shape the widget prints before it is kept. Anything off goes
+  // blank rather than onto the card.
   function loadCache(text) {
     if (!root.cacheLoaded) {
+      var source = String(text)
       var parsed = null
-      try {
-        parsed = JSON.parse(String(text))
-      } catch (error) {
-        parsed = null
+      if (source.length <= 4096) {
+        try {
+          parsed = JSON.parse(source)
+        } catch (error) {
+          parsed = null
+        }
       }
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        var cores = Number(parsed.cores)
+        var started = Number(parsed.started)
+        var lastSeen = Number(parsed.lastSeen)
+        var horizon = Date.now() + 86400000
         root.cached = {
-          cores: Number(parsed.cores) || 0,
-          ram: parsed.ram ? String(parsed.ram) : "",
-          started: Number(parsed.started) || 0,
-          lastSeen: Number(parsed.lastSeen) || 0
+          cores: Number.isInteger(cores) && cores > 0 && cores <= 1024 ? cores : 0,
+          ram: typeof parsed.ram === "string" && State.RAM_SHAPE.test(parsed.ram) ? parsed.ram : "",
+          started: Number.isInteger(started) && started > 0 && started * 1000 < horizon ? started : 0,
+          lastSeen: Number.isInteger(lastSeen) && lastSeen > 0 && lastSeen < horizon ? lastSeen : 0
         }
       }
     }
@@ -193,6 +204,8 @@ QtObject {
   // Called once per sample. State.cacheFrom decides what the cache should
   // hold; this only decides when to put it on disk.
   function updateCache(now) {
+    // A mocked sample is a picture, not a fact: it never reaches the file.
+    if (root.mockLine !== "") return
     var next = State.cacheFrom(root.sample, root.cached, now)
     if (!next || next === root.cached) return
     var previous = root.cached
@@ -203,6 +216,18 @@ QtObject {
     if (!shapeMoved && now - root.cacheWrittenAt < 60000) return
     root.cacheWrittenAt = now
     cacheFile.setText(JSON.stringify(next, null, 2) + "\n")
+  }
+
+  // A reloaded or removed plugin must not leave a poller behind.
+  Component.onDestruction: {
+    sampleTimer.running = false
+    probeTimer.running = false
+    unitTimer.running = false
+    tickTimer.running = false
+    sampleProc.running = false
+    probeProc.running = false
+    unitProc.running = false
+    resultProc.running = false
   }
 
   Component.onCompleted: {
@@ -235,7 +260,7 @@ QtObject {
   }
 
   function applySample(text) {
-    var line = String(text).replace(/\n[\s\S]*$/, "").replace(/^\s+|\s+$/g, "")
+    var line = root.plain(String(text).replace(/\n[\s\S]*$/, ""), 512).replace(/^\s+|\s+$/g, "")
     var previous = root.sample
     var next = State.parseSample(line)
     root.sampleLine = line
@@ -268,7 +293,7 @@ QtObject {
   }
 
   property Process sampleProc: Process {
-    command: ["bash", root.helpers + "/vm-state.sh"]
+    command: ["/usr/bin/timeout", "-k", "2", "10", "/usr/bin/bash", root.helpers + "/vm-state.sh"]
     environment: ({ LC_ALL: "C" })
     stdout: StdioCollector { id: sampleOut; waitForEnd: true }
     onExited: function (code) {
@@ -289,7 +314,7 @@ QtObject {
   readonly property int probeEvery: State.probeInterval(root.state)
 
   property Process probeProc: Process {
-    command: ["bash", root.helpers + "/rdp-probe.sh"]
+    command: ["/usr/bin/timeout", "-k", "2", "10", "/usr/bin/bash", root.helpers + "/rdp-probe.sh"]
     environment: ({ LC_ALL: "C" })
     onExited: function (code) {
       // 0 = Connection Confirm, 1 = no/garbage reply, 2 = refused.
@@ -334,6 +359,16 @@ QtObject {
     return String(text).indexOf("Request dismissed") !== -1
   }
 
+  // Text from a helper, systemd or the journal is data. Every sink the kit
+  // gives us renders as PlainText already, but the string still gets the
+  // treatment any outside input gets: C0/C1 controls and the bidi and
+  // zero-width characters stripped, and a length cap.
+  function plain(text, max) {
+    return String(text)
+      .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g, "")
+      .slice(0, max || 300)
+  }
+
   function clearDesired() {
     if (!root.desired.action && !root.desired.failed) return
     root.desired = { action: null, since: 0, failed: "" }
@@ -345,7 +380,7 @@ QtObject {
   // target of the debug IPC method, so the failed card can be looked at
   // without breaking a VM to get there.
   function fail(text) {
-    var message = String(text).replace(/^\s+|\s+$/g, "")
+    var message = root.plain(text).replace(/^\s+|\s+$/g, "")
     if (message === "") return
     root.desired = { action: null, since: 0, failed: message }
     root.launching = false
@@ -410,7 +445,7 @@ QtObject {
   }
 
   property Process launchProc: Process {
-    command: ["bash", root.helpers + "/launch.sh"]
+    command: ["/usr/bin/bash", root.helpers + "/launch.sh"]
     stdout: StdioCollector { id: launchOut; waitForEnd: true }
     onExited: function (code) {
       var message = root.lastLine(launchOut.text)
@@ -454,7 +489,7 @@ QtObject {
   }
 
   property Process unitProc: Process {
-    command: ["systemctl", "--user", "is-active", "omawin-launch"]
+    command: ["/usr/bin/timeout", "-k", "2", "5", "/usr/bin/systemctl", "--user", "is-active", "omawin-launch"]
     environment: ({ LC_ALL: "C" })
     stdout: StdioCollector { id: unitOut; waitForEnd: true }
     // is-active exits non-zero for everything but "active", so the code is
@@ -470,7 +505,7 @@ QtObject {
   }
 
   property Process resultProc: Process {
-    command: ["bash", root.helpers + "/launch-result.sh"]
+    command: ["/usr/bin/timeout", "-k", "2", "10", "/usr/bin/bash", root.helpers + "/launch-result.sh"]
     environment: ({ LC_ALL: "C" })
     stdout: StdioCollector { id: resultOut; waitForEnd: true }
     onExited: function (code) {
@@ -505,7 +540,7 @@ QtObject {
   }
 
   property Process stopProc: Process {
-    command: ["omarchy-windows-vm", "stop"]
+    command: ["/usr/bin/omarchy-windows-vm", "stop"]
     environment: ({ LC_ALL: "C" })
     stderr: StdioCollector { id: stopErr; waitForEnd: true }
     onExited: function (code) {
@@ -528,7 +563,7 @@ QtObject {
   }
 
   property Process installProc: Process {
-    command: ["omarchy-launch-floating-terminal-with-presentation", "omarchy-windows-vm", "install"]
+    command: ["/usr/share/omarchy/bin/omarchy-launch-floating-terminal-with-presentation", "/usr/bin/omarchy-windows-vm", "install"]
     onExited: function (code) { root.refresh() }
   }
 
@@ -563,7 +598,7 @@ QtObject {
   }
 
   property Process disconnectProc: Process {
-    command: ["systemctl", "--user", "stop", "omawin-launch"]
+    command: ["/usr/bin/systemctl", "--user", "stop", "omawin-launch"]
     environment: ({ LC_ALL: "C" })
     onExited: function (code) {
       // Whether or not the unit was still there, nothing holds the RDP
@@ -591,7 +626,7 @@ QtObject {
   property bool reconnectAfterResume: false
 
   property Process pauseProc: Process {
-    command: ["pkexec", "/usr/bin/docker", "pause", "omarchy-windows"]
+    command: ["/usr/bin/pkexec", "/usr/bin/docker", "pause", "omarchy-windows"]
     environment: ({ LC_ALL: "C" })
     stderr: StdioCollector { id: pauseErr; waitForEnd: true }
     onExited: function (code) {
@@ -605,7 +640,7 @@ QtObject {
   }
 
   property Process resumeProc: Process {
-    command: ["pkexec", "/usr/bin/docker", "unpause", "omarchy-windows"]
+    command: ["/usr/bin/pkexec", "/usr/bin/docker", "unpause", "omarchy-windows"]
     environment: ({ LC_ALL: "C" })
     stderr: StdioCollector { id: resumeErr; waitForEnd: true }
     onExited: function (code) {
@@ -647,7 +682,7 @@ QtObject {
   }
 
   property Process webProc: Process {
-    command: ["xdg-open", "http://127.0.0.1:8006"]
+    command: ["/usr/bin/xdg-open", "http://127.0.0.1:8006"]
   }
 
   // ~/Windows, the /shared bind — the guest sees it as a network drive.
@@ -656,6 +691,6 @@ QtObject {
   }
 
   property Process sharedProc: Process {
-    command: ["xdg-open", root.home + "/Windows"]
+    command: ["/usr/bin/xdg-open", root.home + "/Windows"]
   }
 }

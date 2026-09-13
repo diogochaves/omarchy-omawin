@@ -1,11 +1,11 @@
-// Omawin: throwaway probe rule. It answers open question 1 of the plan by
-// BEHAVIOUR, not by logging: polkitd runs with --log-level=notice on Omarchy
-// and polkit.log() lines never reach the journal there. So this rule allows
-// exactly ONE harmless, read-only command line — `__priv status`, which only
-// runs `docker inspect` — and only when both details pkexec supplies,
-// "program" and "command_line", match the resolved path plus arguments the
-// real rule will match on. Nothing else is granted; every other pkexec call
-// prompts as usual.
+// Omawin: throwaway probe rule for @USER@. It checks by BEHAVIOUR, not by
+// logging (polkitd runs with --log-level=notice on Omarchy and polkit.log()
+// lines never reach the journal there), that pkexec's action details are what
+// 49-omawin.rules matches on. So this rule allows exactly ONE harmless,
+// read-only command line — `__priv status`, which only runs `docker inspect`
+// — to @USER@ only, and only when both details pkexec supplies, "program" and
+// "command_line", match the resolved path plus arguments the real rule will
+// match on. Nothing else is granted; every other pkexec call prompts as usual.
 //
 //   sudo ./setup polkit --probe
 //   pkexec /usr/bin/omarchy-windows-vm __priv status         no prompt = the
@@ -22,8 +22,8 @@
 // `sudo ./setup polkit` removes it (so does --remove).
 polkit.addRule(function (action, subject) {
   if (action.id !== "org.freedesktop.policykit.exec") return;
+  if (subject.user !== "@USER@") return;
   if (action.lookup("program") !== "/usr/bin/omarchy-windows-vm") return;
   if (action.lookup("command_line") !== "/usr/bin/omarchy-windows-vm __priv status") return;
-  polkit.log("omawin-probe matched for " + subject.user);
   return polkit.Result.YES;
 });

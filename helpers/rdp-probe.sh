@@ -32,6 +32,11 @@ port=${RDP_PORT:-3389}
 wait=${RDP_TIMEOUT:-3}
 protocols=${RDP_PROTOCOLS:-0b000000}
 
+# The hooks are for the tests; a value that is not the shape expected is a
+# broken probe, not a probe of somewhere else.
+[[ $host =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ && $port =~ ^[0-9]{1,5}$ &&
+   $wait =~ ^[0-9]{1,3}$ && $protocols =~ ^[0-9a-f]{8}$ ]] || exit 2
+
 request='\x03\x00\x00\x13\x0e\xe0\x00\x00\x00\x00\x00\x01\x00\x08\x00'
 for ((i = 0; i < 8; i += 2)); do request+="\x${protocols:i:2}"; done
 
@@ -42,7 +47,7 @@ printf '%b' "$request" >&3 2>/dev/null || { exec 3<&-; exit 2; }
 
 # bash `read` silently drops the NUL bytes an X.224 header is full of, so the
 # reply goes through od instead.
-reply=$(timeout "$wait" head -c 19 <&3 2>/dev/null | od -An -tx1 | tr -d ' \n')
+reply=$(/usr/bin/timeout "$wait" /usr/bin/head -c 19 <&3 2>/dev/null | /usr/bin/od -An -tx1 | /usr/bin/tr -d ' \n')
 exec 3<&- 3>&-
 
 [[ $reply == 030000130ed0* ]]

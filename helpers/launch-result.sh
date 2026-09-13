@@ -28,19 +28,19 @@
 # printed nothing, and a synthetic "<unit> exited with status N" only when the
 # journal has nothing at all (journald rotated it away, or is not running).
 #
-# Environment (optional):
-#   OMAWIN_UNIT            unit name                   (default omawin-launch)
-#   OMAWIN_JOURNAL_LINES   journal lines to look at    (default 60)
+# The unit name is a constant, the journal window is the last 60 lines capped
+# at 64 KiB, and the line printed is capped at 300 characters: whatever the
+# launcher or xfreerdp wrote, the card gets one bounded line of it.
 
 set -uo pipefail
 export LC_ALL=C
 
-unit=${OMAWIN_UNIT:-omawin-launch}
-lines=${OMAWIN_JOURNAL_LINES:-60}
+unit=omawin-launch
+lines=60
 
 # --- while the unit still exists, systemd's own answer is authoritative -----
 
-mapfile -t props < <(systemctl --user show \
+mapfile -t props < <(/usr/bin/systemctl --user show \
   -p LoadState -p ActiveState -p Result -p ExecMainStatus --value "$unit" 2>/dev/null)
 load=${props[0]:-not-found}
 active=${props[1]:-inactive}
@@ -55,9 +55,9 @@ fi
 
 # --- otherwise reconstruct the last run from the journal --------------------
 
-journal=$(journalctl --user -u "$unit" -n "$lines" -o cat --no-pager 2>/dev/null)
+journal=$(/usr/bin/journalctl --user -u "$unit" -n "$lines" -o cat --no-pager 2>/dev/null | /usr/bin/head -c 65536)
 [[ -z ${journal//[[:space:]]/} ]] &&
-  journal=$(journalctl --user "_SYSTEMD_USER_UNIT=$unit.service" -n "$lines" -o cat --no-pager 2>/dev/null)
+  journal=$(/usr/bin/journalctl --user "_SYSTEMD_USER_UNIT=$unit.service" -n "$lines" -o cat --no-pager 2>/dev/null | /usr/bin/head -c 65536)
 
 mapfile -t all <<<"$journal"
 
@@ -115,4 +115,5 @@ for ((i = ${#window[@]} - 1; i >= 0; i--)); do
   break
 done
 
-echo "${message:-${fallback:-$unit exited with status $status}}"
+message=${message:-${fallback:-$unit exited with status $status}}
+printf '%s\n' "${message:0:300}"

@@ -25,21 +25,18 @@
 #
 # Exit 0 with one of the two words above on stdout; exit 1 with systemd-run's
 # own message on stdout when anything else went wrong. Nothing privileged runs
-# here: the pkexec call is inside omarchy-windows-vm.
-#
-# Environment (optional):
-#   OMAWIN_UNIT         unit name          (default omawin-launch)
-#   OMAWIN_LAUNCH_CMD   command to run     (default omarchy-windows-vm launch -k)
+# here: the pkexec call is inside omarchy-windows-vm. The unit name and the
+# command are constants — nothing in the environment can point this script at
+# another program.
 
 set -uo pipefail
 export LC_ALL=C
 
-unit=${OMAWIN_UNIT:-omawin-launch}
-read -r -a cmd <<<"${OMAWIN_LAUNCH_CMD:-omarchy-windows-vm launch -k}"
+unit=omawin-launch
 
-message=$(systemd-run --user "--unit=$unit" --collect --quiet \
+message=$(/usr/bin/systemd-run --user "--unit=$unit" --collect --quiet \
   --property=ExitType=cgroup \
-  -- "${cmd[@]}" 2>&1)
+  -- /usr/bin/omarchy-windows-vm launch -k 2>&1 | /usr/bin/head -c 2048)
 status=$?
 
 if [[ $status -eq 0 ]]; then

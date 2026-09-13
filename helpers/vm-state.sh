@@ -53,7 +53,8 @@ credentials=${CREDENTIALS_FILE:-$HOME/.config/windows/credentials}
 installed=0
 [[ -f $compose && -f $credentials ]] && installed=1
 
-docker=${DOCKER_STATE-$(systemctl is-active docker.service 2>/dev/null)}
+docker=${DOCKER_STATE-$(/usr/bin/systemctl is-active docker.service 2>/dev/null)}
+[[ $docker =~ ^[a-z-]{0,32}$ ]] || docker=
 
 pid= frozen= cores= ram= cid= started= web=000
 if ((installed)); then
@@ -72,9 +73,12 @@ if ((installed)); then
     [[ ${argv[0]-} == qemu-system-x86_64 ]] || continue
 
     pid=${dir##*/}
+    [[ $pid =~ ^[0-9]{1,8}$ ]] || continue
     cid=${cgpath##*docker-}
     cid=${cid%.scope}
+    [[ $cid =~ ^[0-9a-f]{12,64}$ ]] || cid=
     read -r frozen 2>/dev/null <"$sys_root/fs/cgroup$cgpath/cgroup.freeze" || frozen=
+    [[ $frozen == 0 || $frozen == 1 ]] || frozen=
 
     # starttime is field 22, but comm (field 2) is parenthesised and may hold
     # spaces and ')' of its own, so count from the LAST ')': what follows it
@@ -85,8 +89,10 @@ if ((installed)); then
       while read -r key value _; do
         if [[ $key == btime ]]; then btime=$value; break; fi
       done 2>/dev/null <"$proc_root/stat"
-      [[ -n $btime && ${stat_fields[19]-} =~ ^[0-9]+$ ]] &&
-        started=$((btime + stat_fields[19] / 100))
+      # Both are digits-only before they go anywhere near $((…)), which would
+      # otherwise evaluate whatever a bad /proc handed back.
+      [[ $btime =~ ^[0-9]{1,12}$ && ${stat_fields[19]-} =~ ^[0-9]{1,15}$ ]] &&
+        started=$((10#$btime + 10#${stat_fields[19]} / 100))
     fi
 
     for ((i = 1; i < ${#argv[@]}; i++)); do
@@ -95,9 +101,16 @@ if ((installed)); then
         -m) ram=${argv[i]} ;;
       esac
     done
+    # Only the two shapes QEMU is given by Omarchy's compose are printed;
+    # anything else on that command line stays where it was.
+    [[ $cores =~ ^[0-9]{1,4}$ ]] || cores=
+    [[ $ram =~ ^[0-9]{1,6}[KMGTkmgt]?$ ]] || ram=
     break
   done
-  web=${WEB_CODE-$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 http://127.0.0.1:8006/)}
+  # -q first so ~/.curlrc cannot add to the request; the body is discarded and
+  # capped anyway, only the status code is wanted.
+  web=${WEB_CODE-$(/usr/bin/curl -q -s -o /dev/null -w '%{http_code}' --max-time 1 --max-filesize 65536 -- http://127.0.0.1:8006/)}
+  [[ $web =~ ^[0-9]{3}$ ]] || web=000
 fi
 
 printf 'installed=%s docker=%s pid=%s frozen=%s cores=%s ram=%s web=%s cid=%s started=%s\n' \

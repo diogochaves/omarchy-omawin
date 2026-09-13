@@ -108,7 +108,7 @@ Panel {
     // line hands the widget back to the sampler. See the IPC table in the
     // README.
     function mock(line: string, probe: string, action: string): string {
-      service.mockLine = String(line)
+      service.mockLine = String(line).slice(0, 512)
       service.mockProbe = String(probe)
       // Handing back to the sampler also drops the mocked transient, so the
       // card does not sit in "starting" for 150 s after `mock "" "" ""`.

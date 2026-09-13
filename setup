@@ -1,15 +1,22 @@
 #!/bin/bash
 # Installs chaves.omawin's polkit rule, the one privileged part of the plugin.
 #
-#   sudo ./setup polkit [--user NAME]   install 49-omawin.rules for NAME
-#                                       (default $SUDO_USER); also removes the
-#                                       probe rule. Idempotent.
-#   sudo ./setup polkit --probe         install the throwaway probe rule that
-#                                       logs pkexec's action details, to check
-#                                       what 49-omawin.rules has to match
+#   sudo ./setup polkit [--user NAME]   show the rendered 49-omawin.rules for
+#                                       NAME (default $SUDO_USER), ask, and
+#                                       install it; also removes the probe
+#                                       rule. Idempotent. --yes skips the
+#                                       question.
+#   sudo ./setup polkit --probe         same, for the throwaway probe rule
+#                                       that allows one read-only command
+#                                       line, to check what 49-omawin.rules
+#                                       has to match on this box
 #   sudo ./setup polkit --status        which of the two rules are installed
 #   sudo ./setup polkit --remove        remove both
 #   ./setup -h                          this text
+#
+# Both rules are shown in full before anything is written, so what root
+# installs is what was read on screen, not whatever a file in the checkout
+# holds at that moment.
 #
 # Root is needed only because /etc/polkit-1/rules.d is root:polkitd 0750: the
 # rules cannot even be listed as the user. Nothing else here is privileged,
@@ -37,12 +44,12 @@ rules_dir=${POLKIT_RULES_DIR:-/etc/polkit-1/rules.d}
 rule_name=49-omawin.rules
 probe_name=49-omawin-probe.rules
 rule_src=$repo_dir/polkit/49-omawin.rules.in
-probe_src=$repo_dir/polkit/$probe_name
+probe_src=$repo_dir/polkit/49-omawin-probe.rules.in
 rule_dest=$rules_dir/$rule_name
 probe_dest=$rules_dir/$probe_name
 
 usage() {
-  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 die() {
@@ -74,11 +81,10 @@ rule_user() {
   sed -n 's/.*subject\.user !== "\([^"]*\)".*/\1/p' "$1" | head -n 1
 }
 
-polkit_install() {
+# $SUDO_USER is empty under plain `su` and says "root" under `sudo -u root`:
+# in both cases there is no desktop user to name, so ask for one.
+check_user() {
   local user=$1
-
-  # $SUDO_USER is empty under plain `su` and says "root" under `sudo -u root`:
-  # in both cases there is no desktop user to name, so ask for one.
   [[ -n $user ]] || die "no target user: pass --user NAME"
   [[ $user != root ]] ||
     die "refusing to write a rule for root, which needs no pkexec exemption:
@@ -87,16 +93,41 @@ polkit_install() {
     die "not a plausible user name: $user"
   id -- "$user" >/dev/null 2>&1 ||
     echo "setup: warning: no user '$user' on this system — installing anyway" >&2
+}
 
+# Renders $1 for the user, prints it in full, asks, installs it at $2. What is
+# installed is the rendered copy that was just shown, never the checkout file.
+render_and_install() {
+  local src=$1 dest=$2 user=$3
   local tmp
   tmp=$(mktemp)
   # shellcheck disable=SC2064  # $tmp is wanted now, not at trap time
   trap "rm -f '$tmp'" EXIT
-  sed "s/@USER@/$user/g" "$rule_src" >"$tmp"
+  sed "s/@USER@/$user/g" "$src" >"$tmp"
   if grep -q '@USER@' "$tmp"; then die "@USER@ survived substitution"; fi
-  install_file "$tmp" "$rule_dest"
+
+  echo "About to install this file, as root, at $dest:"
+  echo
+  sed 's/^/    /' "$tmp"
+  echo
+  if ((assume_yes)); then
+    :
+  elif [[ -t 0 ]]; then
+    local answer
+    read -r -p "Install it? [y/N] " answer
+    [[ $answer == [yY] || $answer == [yY][eE][sS] ]] || die "not installed"
+  else
+    die "no terminal to ask on: re-run with --yes after reading the rule above"
+  fi
+  install_file "$tmp" "$dest"
   rm -f "$tmp"
   trap - EXIT
+}
+
+polkit_install() {
+  local user=$1
+  check_user "$user"
+  render_and_install "$rule_src" "$rule_dest" "$user"
 
   echo "installed $rule_dest for user $user"
   if remove_file "$probe_dest"; then echo "removed   $probe_dest (the probe rule)"; fi
@@ -114,13 +145,15 @@ EOF
 }
 
 polkit_probe() {
-  install_file "$probe_src" "$probe_dest"
+  local user=$1
+  check_user "$user"
+  render_and_install "$probe_src" "$probe_dest" "$user"
   cat <<EOF
-installed $probe_dest
+installed $probe_dest for user $user
 
-It allows exactly one read-only command line, `__priv status`, and only when
-pkexec's "program" and "command_line" details match the resolved path plus
-arguments that 49-omawin.rules will match on. Next, from a terminal:
+It allows exactly one read-only command line, `__priv status`, to $user only,
+and only when pkexec's "program" and "command_line" details match the resolved
+path plus arguments that 49-omawin.rules will match on. Next, as $user:
 
   pkexec /usr/bin/omarchy-windows-vm __priv status
       must run with NO dialog: the details are what the real rule expects
@@ -140,7 +173,7 @@ polkit_status() {
     echo "absent  $rule_dest"
   fi
   if [[ -f $probe_dest ]]; then
-    echo "present $probe_dest — the probe rule, remove it: sudo ./setup polkit --remove"
+    echo "present $probe_dest (user: $(rule_user "$probe_dest")) — the probe rule, remove it: sudo ./setup polkit --remove"
   else
     echo "absent  $probe_dest"
   fi
@@ -170,11 +203,13 @@ main() {
   esac
 
   local mode=install user=${SUDO_USER-}
+  assume_yes=0
   while (($#)); do
     case $1 in
       --remove) mode=remove ;;
       --probe) mode=probe ;;
       --status) mode=status ;;
+      --yes | -y) assume_yes=1 ;;
       --user)
         (($# >= 2)) || die "--user needs a name"
         user=$2
@@ -190,7 +225,7 @@ main() {
   require_root "polkit"
   case $mode in
     install) polkit_install "$user" ;;
-    probe) polkit_probe ;;
+    probe) polkit_probe "$user" ;;
     status) polkit_status ;;
     remove) polkit_remove ;;
   esac
