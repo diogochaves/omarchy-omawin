@@ -4,20 +4,23 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { root } from './helpers.mjs'
+import { helper, root } from './helpers.mjs'
 
 // Runs the real ./setup against a throwaway directory standing in for
-// /etc/polkit-1/rules.d, unprivileged. The two hooks are documented in the
-// script's header: POLKIT_RULES_DIR moves the target directory and
-// SETUP_SKIP_ROOT_CHECK=1 waives the root guard (install(1) then also drops
-// its -o root -g root, which a non-root user cannot honour). SUDO_USER is
-// blanked so a test never picks up whoever ran `node --test` through sudo.
-function setup(args, { dir, env = {} } = {}) {
+// /etc/polkit-1/rules.d, unprivileged. The hooks are documented in the script's
+// header: POLKIT_RULES_DIR moves the target directory, OMAWIN_STATE_DIR moves
+// the user-owned copy it leaves for the widget (SETUP_TARGET_HOME derives that
+// from a home instead), and SETUP_SKIP_ROOT_CHECK=1 waives the root guard
+// (install(1) then also drops its -o root -g root, which a non-root user cannot
+// honour). SUDO_USER is blanked so a test never picks up whoever ran
+// `node --test` through sudo.
+function setup(args, { dir, state, env = {} } = {}) {
   const result = spawnSync(path.join(root, 'setup'), args, {
     cwd: root, encoding: 'utf8', env: {
       ...process.env,
       SUDO_USER: '',
       POLKIT_RULES_DIR: dir,
+      ...(state === undefined ? {} : { OMAWIN_STATE_DIR: state }),
       SETUP_SKIP_ROOT_CHECK: '1',
       ...env
     }
@@ -29,6 +32,14 @@ function rulesDir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omawin-rules-'))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
   return dir
+}
+
+// A throwaway stand-in for ~/.local/state/omawin, where the copy the widget
+// reads is left. Returned without being created: setup has to create it.
+function stateDir(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omawin-state-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  return path.join(dir, 'omawin')
 }
 
 const RULE = '49-omawin.rules'
@@ -249,4 +260,129 @@ test('SUDO_USER is the default target, and --user wins over it', t => {
     setup(['polkit', '--yes', '--user', 'alice'], { dir, env: { SUDO_USER: 'carol' } }).status, 0)
   assert.match(fs.readFileSync(path.join(dir, RULE), 'utf8'),
     /subject\.user !== "alice"/)
+})
+
+// --------------------------------------- the copy the widget reads back out
+
+test('installing leaves a user-owned copy of exactly what was installed', t => {
+  const dir = rulesDir(t)
+  const state = stateDir(t)
+  const { status, out } = setup(['polkit', '--yes', '--user', 'alice'], { dir, state })
+  assert.equal(status, 0, out)
+  assert.match(out, /recorded .*49-omawin\.rules \(a user-owned copy/)
+
+  // /etc/polkit-1/rules.d is root:polkitd 0750, so this copy is the only thing
+  // the widget can look at — and it is the installed file, byte for byte, not a
+  // second rendering of the template.
+  const copy = path.join(state, RULE)
+  assert.equal(fs.readFileSync(copy, 'utf8'), fs.readFileSync(path.join(dir, RULE), 'utf8'))
+  assert.equal(fs.statSync(copy).mode & 0o777, 0o644)
+  assert.match(fs.readFileSync(copy, 'utf8'), /subject\.user !== "alice"/)
+
+  // Its mtime is when it was installed: that is the caption's date.
+  assert.ok(Date.now() - fs.statSync(copy).mtimeMs < 60000)
+
+  // Installing again is still idempotent, copy and all.
+  assert.equal(setup(['polkit', '--yes', '--user', 'alice'], { dir, state }).status, 0)
+  assert.deepEqual(fs.readdirSync(state), [RULE])
+})
+
+test('the probe rule is not recorded: it is not the rule the switch is about', t => {
+  const dir = rulesDir(t)
+  const state = stateDir(t)
+  assert.equal(setup(['polkit', '--yes', '--probe', '--user', 'alice'], { dir, state }).status, 0)
+  assert.equal(fs.existsSync(path.join(state, RULE)), false)
+  assert.equal(fs.existsSync(state), false)
+})
+
+test('--remove takes the copy out too, even when the rule itself is gone', t => {
+  const dir = rulesDir(t)
+  const state = stateDir(t)
+  assert.equal(setup(['polkit', '--yes', '--user', 'alice'], { dir, state }).status, 0)
+
+  const removed = setup(['polkit', '--yes', '--remove', '--user', 'alice'], { dir, state })
+  assert.equal(removed.status, 0, removed.out)
+  assert.match(removed.out, /removed .*49-omawin\.rules \(the widget's copy\)/)
+  assert.deepEqual(fs.readdirSync(state), [])
+
+  // A rule taken out by hand leaves the copy behind — the stale record the card
+  // warns about — and --remove is what cleans it up.
+  fs.writeFileSync(path.join(state, RULE), 'polkit.addRule(function () {});\n')
+  const stale = setup(['polkit', '--yes', '--remove', '--user', 'alice'], { dir, state })
+  assert.equal(stale.status, 0)
+  assert.match(stale.out, /removed .*\(the widget's copy\)/)
+  assert.deepEqual(fs.readdirSync(state), [])
+})
+
+test('--status reports the copy, and says when it cannot know where it is', t => {
+  const dir = rulesDir(t)
+  const state = stateDir(t)
+
+  const before = setup(['polkit', '--yes', '--status', '--user', 'alice'], { dir, state })
+  assert.equal(before.status, 0, before.out)
+  assert.match(before.out, /absent .*49-omawin\.rules — the widget's Settings switch reads as off/)
+
+  assert.equal(setup(['polkit', '--yes', '--user', 'alice'], { dir, state }).status, 0)
+  const after = setup(['polkit', '--yes', '--status', '--user', 'alice'], { dir, state })
+  assert.match(after.out, /present .*49-omawin\.rules \(user: alice\) — what the widget reads/)
+
+  // No $SUDO_USER, no --user and no hook: there is no home to resolve, and it
+  // says so rather than reporting an absence it did not check.
+  const blind = setup(['polkit', '--yes', '--status'], { dir, state: '' })
+  assert.equal(blind.status, 0, blind.out)
+  assert.match(blind.out, /unknown the user-owned copy: no target user/)
+})
+
+test('without the hook the copy goes under the target user\'s own home', t => {
+  const dir = rulesDir(t)
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'omawin-home-'))
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }))
+
+  // SETUP_TARGET_HOME stands in for the getent lookup, which a test cannot
+  // arrange; the path under it is the one the helper looks in.
+  const { status, out } = setup(['polkit', '--yes', '--user', 'alice'],
+    { dir, state: '', env: { SETUP_TARGET_HOME: home } })
+  assert.equal(status, 0, out)
+  const copy = path.join(home, '.local/state/omawin', RULE)
+  assert.equal(fs.existsSync(copy), true)
+  // The directory it had to create is the user's own private one.
+  assert.equal(fs.statSync(path.dirname(copy)).mode & 0o777, 0o700)
+})
+
+test('a rule it could not record is still installed, with a warning', t => {
+  const dir = rulesDir(t)
+  // A state directory that cannot be created: the rule is what matters, and the
+  // widget's switch simply reads as off.
+  const { status, out } = setup(['polkit', '--yes', '--user', 'alice'],
+    { dir, state: '/proc/nonexistent/omawin' })
+  assert.equal(status, 0, out)
+  assert.equal(fs.existsSync(path.join(dir, RULE)), true)
+  assert.doesNotMatch(out, /recorded/)
+})
+
+// --------------------------------- what the widget makes of the copy again
+
+test('helpers/rule-state.sh reads that copy, and nothing else', t => {
+  const dir = rulesDir(t)
+  const state = stateDir(t)
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'omawin-home-'))
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }))
+
+  const absent = helper('rule-state.sh', [], { OMAWIN_STATE_DIR: state, HOME: home })
+  assert.equal(absent.status, 0)
+  assert.equal(absent.out, 'present=0 user= since=')
+
+  assert.equal(setup(['polkit', '--yes', '--user', 'alice'], { dir, state }).status, 0)
+  const present = helper('rule-state.sh', [], { OMAWIN_STATE_DIR: state, HOME: home })
+  assert.equal(present.status, 0)
+  assert.match(present.out, /^present=1 user=alice since=[0-9]{10}$/)
+
+  // The fallback: a user whose XDG_STATE_HOME points elsewhere still finds the
+  // copy setup wrote under ~/.local/state, because it looks there too.
+  const fallback = path.join(home, '.local/state/omawin')
+  fs.mkdirSync(fallback, { recursive: true })
+  fs.copyFileSync(path.join(state, RULE), path.join(fallback, RULE))
+  const moved = helper('rule-state.sh', [],
+    { OMAWIN_STATE_DIR: path.join(home, 'elsewhere'), HOME: home })
+  assert.match(moved.out, /^present=1 user=alice since=[0-9]{10}$/)
 })

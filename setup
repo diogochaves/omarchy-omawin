@@ -25,6 +25,20 @@
 # polkitd watches the rules directory and reloads on its own (inotify), so no
 # daemon is restarted here — the rule is live the moment install(1) returns.
 #
+# Installing also drops a user-owned copy of the installed rule at
+# ~/.local/state/omawin/49-omawin.rules (0644, chowned to the target user), and
+# --remove deletes it. That copy is the only way the widget can know the rule is
+# there: /etc/polkit-1/rules.d is root:polkitd 0750, so the user cannot list it
+# or even test -f a file in it, and pkcheck --detail refuses an unprivileged
+# caller. The copy is byte for byte what was installed, so the Settings card can
+# show the real thing; its mtime is when it was installed. It is a record, not
+# the truth — a rule taken out by hand leaves the copy behind.
+#
+# The copy goes to the target user's ~/.local/state, not to $XDG_STATE_HOME:
+# root cannot read the user's environment. helpers/rule-state.sh looks at
+# $XDG_STATE_HOME/omawin first and falls back to ~/.local/state/omawin, so a
+# user who moved their state directory is covered.
+#
 # Everything is resolved from $0, so `sudo ./setup polkit` works from the
 # checkout without a PATH or an installed copy. coreutils and bash only.
 #
@@ -34,6 +48,9 @@
 #                         install into a fake root as an ordinary user. The
 #                         -o root -g root of install(1) is likewise only
 #                         passed when actually running as root.
+#   OMAWIN_STATE_DIR      where the user-owned copy goes (default the target
+#                         user's ~/.local/state/omawin)
+#   SETUP_TARGET_HOME     that user's home, when getent should not be asked
 
 set -euo pipefail
 export LC_ALL=C
@@ -74,6 +91,42 @@ remove_file() {
   local path=$1
   [[ -e $path ]] || return 1
   rm -f "$path"
+}
+
+# Where the user-owned copy of the rule lives: $OMAWIN_STATE_DIR if the tests
+# set it, otherwise the target user's ~/.local/state/omawin. Fails (empty) when
+# there is no user to ask about, which is only possible under --remove and
+# --status with no $SUDO_USER and no --user.
+state_dir() {
+  local user=$1 home=${SETUP_TARGET_HOME-}
+  if [[ -n ${OMAWIN_STATE_DIR-} ]]; then
+    printf '%s\n' "$OMAWIN_STATE_DIR"
+    return 0
+  fi
+  if [[ -z $home ]]; then
+    [[ -n $user ]] || return 1
+    home=$(getent passwd -- "$user" 2>/dev/null | cut -d: -f6) || return 1
+  fi
+  [[ $home == /* ]] || return 1
+  printf '%s/.local/state/omawin\n' "$home"
+}
+
+# The copy is made FROM the installed file, so it is byte for byte what polkitd
+# reads — not a second rendering of the template that could drift from it.
+record_rule() {
+  local user=$1 dir file
+  dir=$(state_dir "$user") || {
+    echo "setup: warning: no home for '$user': the widget's Settings switch will read as off" >&2
+    return 1
+  }
+  file=$dir/$rule_name
+  local -a owner=()
+  if ((EUID == 0)) && [[ -n $user ]]; then
+    owner=(-o "$user" -g "$(id -gn -- "$user" 2>/dev/null || printf '%s' "$user")")
+  fi
+  install -d -m 0700 "${owner[@]}" -- "$dir" || return 1
+  install -m 0644 "${owner[@]}" -- "$rule_dest" "$file" || return 1
+  printf '%s\n' "$file"
 }
 
 # The user named by an installed rule, read back out of the rule itself.
@@ -130,6 +183,10 @@ polkit_install() {
   render_and_install "$rule_src" "$rule_dest" "$user"
 
   echo "installed $rule_dest for user $user"
+  local copy
+  if copy=$(record_rule "$user"); then
+    echo "recorded  $copy (a user-owned copy, so the widget can show the switch)"
+  fi
   if remove_file "$probe_dest"; then echo "removed   $probe_dest (the probe rule)"; fi
   cat <<EOF
 
@@ -167,6 +224,8 @@ EOF
 }
 
 polkit_status() {
+  local user=$1 dir copy=
+  if dir=$(state_dir "$user"); then copy=$dir/$rule_name; fi
   if [[ -f $rule_dest ]]; then
     echo "present $rule_dest (user: $(rule_user "$rule_dest"))"
   else
@@ -177,16 +236,29 @@ polkit_status() {
   else
     echo "absent  $probe_dest"
   fi
+  if [[ -z $copy ]]; then
+    echo "unknown the user-owned copy: no target user (pass --user NAME)"
+  elif [[ -f $copy ]]; then
+    echo "present $copy (user: $(rule_user "$copy")) — what the widget reads"
+  else
+    echo "absent  $copy — the widget's Settings switch reads as off"
+  fi
 }
 
 polkit_remove() {
-  local removed=0
+  local user=$1 removed=0 dir
   if remove_file "$rule_dest"; then
     echo "removed $rule_dest"
     removed=1
   fi
   if remove_file "$probe_dest"; then
     echo "removed $probe_dest"
+    removed=1
+  fi
+  # The widget's switch is the copy, so it goes too — even when the rule itself
+  # was already gone, which is exactly the stale record the card warns about.
+  if dir=$(state_dir "$user") && remove_file "$dir/$rule_name"; then
+    echo "removed $dir/$rule_name (the widget's copy)"
     removed=1
   fi
   ((removed)) || echo "nothing to remove: neither rule is installed in $rules_dir"
@@ -226,8 +298,8 @@ main() {
   case $mode in
     install) polkit_install "$user" ;;
     probe) polkit_probe "$user" ;;
-    status) polkit_status ;;
-    remove) polkit_remove ;;
+    status) polkit_status "$user" ;;
+    remove) polkit_remove "$user" ;;
   esac
 }
 

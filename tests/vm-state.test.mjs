@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { fixtures, vmState } from './helpers.mjs'
+import { dataImage, fixtures, vmState } from './helpers.mjs'
 
 const CID = '3fff20be218cd2379160eb8acf4144ac6aafd0dacbf17f78f2e4f020466084b9'
 // tests/fixtures/generate.sh: btime 1789179802 + field 22 (632100 ticks at
@@ -14,7 +14,7 @@ test('a running VM reports every field', () => {
   assert.equal(
     vmState('running', { WEB_CODE: '401' }),
     'installed=1 docker=active pid=1360395 frozen=0 cores=4 ram=16G web=401 cid=' + CID +
-      ' started=' + STARTED
+      ' started=' + STARTED + ' disk=64G login=chaves'
   )
 })
 
@@ -22,28 +22,30 @@ test('a paused VM differs only in cgroup.freeze', () => {
   assert.equal(
     vmState('paused', { WEB_CODE: '401' }),
     'installed=1 docker=active pid=1360395 frozen=1 cores=4 ram=16G web=401 cid=' + CID +
-      ' started=' + STARTED
+      ' started=' + STARTED + ' disk=64G login=chaves'
   )
 })
 
 test('installed but stopped leaves every process field empty', () => {
+  // disk and login are not process fields: they are read off the user's own
+  // data.img and credentials file, which are there whether the VM runs or not.
   assert.equal(
     vmState('stopped'),
-    'installed=1 docker=active pid= frozen= cores= ram= web=000 cid= started='
+    'installed=1 docker=active pid= frozen= cores= ram= web=000 cid= started= disk=64G login=chaves'
   )
 })
 
 test('a missing credentials file is not-installed, VM running or not', () => {
   assert.equal(
     vmState('not-installed'),
-    'installed=0 docker=active pid= frozen= cores= ram= web=000 cid= started='
+    'installed=0 docker=active pid= frozen= cores= ram= web=000 cid= started= disk= login='
   )
 })
 
 test('a missing compose file is not-installed too', () => {
   assert.equal(
     vmState('running', { COMPOSE_FILE: '/nonexistent/docker-compose.yml' }),
-    'installed=0 docker=active pid= frozen= cores= ram= web=000 cid= started='
+    'installed=0 docker=active pid= frozen= cores= ram= web=000 cid= started= disk= login='
   )
 })
 
@@ -53,14 +55,14 @@ test('not-installed skips both probes even when they would answer', () => {
   // box when ~/.config/windows/credentials is missing.
   assert.equal(
     vmState('not-installed', { WEB_CODE: '401' }),
-    'installed=0 docker=active pid= frozen= cores= ram= web=000 cid= started='
+    'installed=0 docker=active pid= frozen= cores= ram= web=000 cid= started= disk= login='
   )
 })
 
 test('the docker state is passed through verbatim', () => {
   assert.equal(
     vmState('stopped', { DOCKER_STATE: 'inactive' }),
-    'installed=1 docker=inactive pid= frozen= cores= ram= web=000 cid= started='
+    'installed=1 docker=inactive pid= frozen= cores= ram= web=000 cid= started= disk=64G login=chaves'
   )
 })
 
@@ -101,7 +103,7 @@ test('started survives a comm with spaces and a bracket in it', () => {
     assert.equal(
       vmState('running', { PROC_ROOT: dir, WEB_CODE: '401' }),
       'installed=1 docker=active pid=1360395 frozen=0 cores=4 ram=16G web=401 cid=' + CID +
-        ' started=' + STARTED
+        ' started=' + STARTED + ' disk=64G login=chaves'
     )
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
@@ -113,8 +115,62 @@ test('no btime line means no started, not a bogus epoch', () => {
   fs.cpSync(path.join(fixtures, 'running/proc'), dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'stat'), 'cpu  0 0 0 0\n')
   try {
-    assert.equal(vmState('running', { PROC_ROOT: dir, WEB_CODE: '401' }).includes('started='), true)
-    assert.equal(vmState('running', { PROC_ROOT: dir, WEB_CODE: '401' }).endsWith('started='), true)
+    // Empty, and empty in the middle of the line now that disk and login
+    // follow it.
+    assert.match(vmState('running', { PROC_ROOT: dir, WEB_CODE: '401' }), / started= /)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('disk is the apparent size of data.img, in whole GiB, or nothing', () => {
+  // 68719476736 bytes is what the fixture's sparse image reports on this box.
+  assert.equal(fs.statSync(dataImage('stopped')).size, 68719476736)
+  assert.match(vmState('stopped'), / disk=64G /)
+
+  // Missing, empty, and not a whole number of GiB: all three blank the field
+  // rather than printing a size the writer would refuse.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omawin-img-'))
+  try {
+    assert.match(vmState('stopped', { DATA_IMAGE: path.join(dir, 'gone.img') }), / disk= /)
+
+    const odd = path.join(dir, 'odd.img')
+    fs.writeFileSync(odd, '')
+    fs.truncateSync(odd, 64 * 1024 ** 3 + 512)
+    assert.match(vmState('stopped', { DATA_IMAGE: odd }), / disk= /)
+
+    const small = path.join(dir, 'small.img')
+    fs.writeFileSync(small, '')
+    assert.match(vmState('stopped', { DATA_IMAGE: small }), / disk= /)
+
+    const big = path.join(dir, 'big.img')
+    fs.writeFileSync(big, '')
+    fs.truncateSync(big, 96 * 1024 ** 3)
+    assert.match(vmState('stopped', { DATA_IMAGE: big }), / disk=96G /)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('login is the USERNAME line and only ever that', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omawin-creds-'))
+  const file = path.join(dir, 'credentials')
+  const line = extra => vmState('stopped', { CREDENTIALS_FILE: file, ...extra })
+  try {
+    // The password is on the line above and contains an = and a $, which the
+    // sampler must neither split on nor print.
+    fs.writeFileSync(file, 'PASSWORD=a=b$c\nUSERNAME=alice\n')
+    assert.match(line(), / login=alice$/)
+    assert.equal(line().includes('a=b'), false)
+    assert.equal(line().includes('PASSWORD'), false)
+
+    // No USERNAME line, and a name the VM writer would refuse: both blank.
+    fs.writeFileSync(file, 'PASSWORD=secret\n')
+    assert.match(line(), / login=$/)
+    fs.writeFileSync(file, 'USERNAME=not a user name\nPASSWORD=secret\n')
+    assert.match(line(), / login=$/)
+    fs.writeFileSync(file, 'USERNAME=' + 'x'.repeat(21) + '\nPASSWORD=secret\n')
+    assert.match(line(), / login=$/)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }

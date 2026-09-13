@@ -16,6 +16,13 @@ booting, ready, paused, stopping, failed — with the buttons that make sense
 there: Start, Connect, Pause, Resume, Stop, Web viewer, Shared folder,
 Install. The tooltip carries the state, the VM's shape and its uptime.
 
+Three more faces sit behind it. **Tune** changes the VM's cores, RAM and disk
+while it is off, through the one privileged action Omarchy's own installer ends
+on, with the login passed back unchanged. **Login** shows the stored RDP
+username and password — reveal for 15 s, copy for 30 s — and writes a new
+password down after you have changed it inside Windows. **Settings**, behind the
+gear in the card's title, is where the optional polkit rule goes on and off.
+
 ## Install
 
 ```sh
@@ -24,12 +31,13 @@ omarchy plugin add https://github.com/diogochaves/omarchy-omawin --enable
 
 It needs Omarchy's Windows VM, which is `omarchy-windows-vm install` from a
 terminal or the Install button on the card. Placement is
-`omarchy bar move chaves.omawin --section right --index 0`, updates are
+`omarchy bar move chaves.omawin --section right --after omarchy.tray`, updates are
 `omarchy plugin update chaves.omawin`.
 
 The widget is complete as installed. Every privileged step — starting,
 stopping, pausing — raises Omarchy's authentication dialog, once per press,
-until you install the optional polkit rule described below.
+until you install the optional polkit rule described below, which the card's
+Settings face will do for you. Tune and Update password keep asking either way.
 
 ## What it runs, reads and writes
 
@@ -40,6 +48,13 @@ until you install the optional polkit rule described below.
   `~/.config/windows/credentials` exist. Plus `systemctl is-active
   docker.service`, `systemctl --user is-active omawin-launch` and, after a
   launch ends, the user journal of that one unit.
+  For the shape and the login: the apparent size of `~/.windows/data.img`
+  (`stat -c %s` — the compose is `root:docker 0640` and cannot be read, so that
+  sparse file is the only readable record of `DISK_SIZE`), the `USERNAME` line
+  of the credentials file on every sample and its `PASSWORD` line only when
+  Reveal, Copy or Save asks, `nproc`, `MemTotal`, `df` of `~/.windows`,
+  `timedatectl show -p Timezone`, and `~/.local/state/omawin/49-omawin.rules`
+  — the copy `setup` leaves behind, which is how the Settings switch knows.
 - **Network**: loopback only. A 19-byte X.224 Connection Request to
   `127.0.0.1:3389` and a request to `http://127.0.0.1:8006/` for its status
   code. Nothing leaves the machine.
@@ -49,14 +64,26 @@ until you install the optional polkit rule described below.
   `/usr/bin/omarchy-windows-vm install` in Omarchy's floating terminal,
   `/usr/bin/pkexec /usr/bin/docker pause|unpause omarchy-windows`,
   `systemctl --user stop omawin-launch`, and `xdg-open` on
-  `http://127.0.0.1:8006` and `~/Windows`. Every command is a constant with an
-  absolute path; nothing is built from data.
-- **Writes**: one file, `$XDG_STATE_HOME/omawin/state.json` (see *Cache*).
-  None of your configuration is touched.
+  `http://127.0.0.1:8006` and `~/Windows`. Tune and Update password add
+  `/usr/bin/pkexec /usr/bin/omarchy-windows-vm __priv write_compose` with the
+  six `KEY=VALUE` lines on **stdin**; Copy password adds `/usr/bin/wl-copy`
+  (and `wl-copy --clear` 30 s later); the Settings switch adds
+  `sudo <plugin dir>/setup polkit [--remove]` in Omarchy's floating terminal.
+  Every command is a constant with an absolute path; nothing is built from
+  data, and no password is ever an argument — `/proc/<pid>/cmdline` is
+  world-readable, so the password goes in on stdin or not at all.
+- **Writes**: `$XDG_STATE_HOME/omawin/state.json` (see *Cache*),
+  `~/.config/windows/credentials` when you save a new password (rewritten
+  atomically, 0600, exactly as `omarchy-windows-vm` writes it), and
+  `/var/lib/omarchy/windows/docker-compose.yml` — by asking root to, through
+  the helper's own validated writer. `sudo ./setup polkit` writes the rule and
+  a user-owned copy of it at `~/.local/state/omawin/49-omawin.rules`. None of
+  your configuration is touched.
 - **Privilege**: none of its own. `omarchy-windows-vm` calls pkexec itself for
-  `__priv up_wait` and `__priv down`; pause and unpause go through pkexec
-  directly. The polkit rule is optional and installed by you, on purpose, from
-  a terminal.
+  `__priv up_wait` and `__priv down`; pause, unpause and `write_compose` go
+  through pkexec directly. The polkit rule is optional and installed by you, on
+  purpose, from a terminal — and it does **not** cover `write_compose`, so Tune
+  and Update password ask every time.
 
 ## Remove
 
@@ -70,6 +97,7 @@ What can stay behind, and how to take it out:
 |----------|---------------|--------------|
 | `~/.local/state/omawin/state.json` (`$XDG_STATE_HOME/omawin/`) | kept | `rm -r ~/.local/state/omawin` |
 | `/etc/polkit-1/rules.d/49-omawin.rules` — only if you ran `setup` | kept | `sudo ./setup polkit --remove` **before** removing the plugin, or `sudo rm /etc/polkit-1/rules.d/49-omawin.rules` after |
+| `~/.local/state/omawin/49-omawin.rules` — the user-owned copy `setup` leaves so the Settings switch can read the rule's state | kept | taken out by the same `sudo ./setup polkit --remove`, or `rm ~/.local/state/omawin/49-omawin.rules` |
 | the transient unit `omawin-launch.service` | exists only while an RDP window is open; gone when it closes | `systemctl --user stop omawin-launch` |
 
 Nothing else: no packages, no hooks, no edits to Hyprland or shell config.
@@ -103,27 +131,39 @@ while a pause or unpause is in flight.
 default) holds one object written from the last running sample:
 
 ```json
-{ "cores": 4, "ram": "16G", "started": 1789232550, "lastSeen": 1789236870124 }
+{ "cores": 4, "ram": "16G", "disk": "64G", "started": 1789232550,
+  "lastSeen": 1789236870124,
+  "pending": { "cores": 6, "ram": "16G", "disk": "96G" } }
 ```
 
 That is the whole file: the VM's shape, when the last seen run of it started
-(epoch seconds), and when it was last seen running (epoch milliseconds). It is
-what the stopped card's `4 cores · 16G` pill, its Cores/RAM readings and its
-"Last run" print — nothing else reads it and nothing else writes it. Deleting
-it is safe: those four readings go blank until the VM next runs. It is
-rewritten when the shape changes and at most once a minute otherwise.
+(epoch seconds), when it was last seen running (epoch milliseconds), and —
+only after a Tune — the shape the next start will use. It is what the stopped
+card's `4 cores · 16G · 64G` pill, its Cores/RAM/Disk readings and its "Last
+run" print — nothing else reads it and nothing else writes it. Deleting it is
+safe: those readings go blank until the VM next runs, and the pill falls back
+to what the sampler can see. It is rewritten when the shape changes and at most
+once a minute otherwise.
+
+`pending` is there because nothing else can tell you what a stopped VM will
+start as: the compose that holds it is `root:docker 0640`. It is written by
+Tune's Apply, shown as `next start 6 cores · 16G · 96G` in the tooltip, and
+dropped again the moment QEMU appears — at which point the live sample is the
+truth. `disk` is only a fallback for `~/.windows/data.img`, which is readable
+whether or not the VM runs.
 
 ## Tuning the VM
 
-None of this is widget work, and the widget does not pretend otherwise: it
-shows the VM's shape, it does not change it. What a "normal" VM offers and how
-to get it here, as far as Omarchy's helper allows:
+What a "normal" VM offers and how to get it here, as far as Omarchy's helper
+allows. The first three rows are the widget's **Tune** face now; the rest still
+is not widget work, and it does not pretend otherwise:
 
 | Want | How, here | Notes |
 |------|-----------|-------|
-| Change cores / RAM (VM off) | `omarchy-windows-vm install` again | Re-asks everything, rewrites the compose, **starts the VM immediately** and opens the browser. Cores/RAM apply at that boot; `data.img` is kept. **Enter the same username and password**: they were baked into the guest at first install, and different ones only rewrite the credentials file and break RDP login. Needs `DISK+10 GB` free, computed without subtracting the existing image. |
+| Change cores / RAM (VM off) | **Tune…** on the stopped card | Cores up to `nproc`, RAM from the installer's own list up to `MemTotal`. Apply pipes `RAM= CORES= DISK= USERNAME= PASSWORD= TZ=` into `pkexec omarchy-windows-vm __priv write_compose` — the single privileged action the `install` wizard itself ends on — with the login read out of `~/.config/windows/credentials` and passed back unchanged, so the guest account is never touched and nothing is re-downloaded. One authorisation. The new shape is consumed by the next Start, which is why the face exists only while the VM is off; until then the pill reads `next start …`. `omarchy-windows-vm install` still works and still re-asks everything, starts the VM immediately and opens the browser. |
 | Change cores / RAM (VM on) | Not possible | No hotplug headroom in `-smp` (no `maxcpus`), no balloon device, and the QEMU monitor is `unix:/run/shm/monitor.sock` inside the container. Stop, change, start. |
-| Grow the disk | `install` again with a bigger DISK | Grow only; Windows may need the partition extended in Disk Management. |
+| Grow the disk | **Tune…**, a bigger Disk chip | Grow only — dockur refuses to shrink `data.img`, so smaller sizes are dead on the card. Needs `DISK+10 GB` free, computed without subtracting the existing image, which is the wizard's own rule. Windows sees the extra space as unallocated: extend `C:` in Disk Management once it is up. |
+| Change the RDP password | **Login › Update password…** | Only after you have changed it *inside* Windows: this writes down what the machine sends, it cannot rename or re-password a Windows account. Rewrites the credentials file and, in the same breath, the compose's fallback copy of it — so stopped only, one authorisation. |
 | Anything else dockur supports (KEYBOARD, REGION, LANGUAGE, DISK2_SIZE, extra ports, `/dev/bus/usb`, DHCP/macvlan networking) | `sudo` edit of `/var/lib/omarchy/windows/docker-compose.yml`, then stop/start | `assert_mounts_safe` only checks owner/mode, the two bind lines and `PROTECT`; extra keys survive. **The next `install` run overwrites them.** Keep a copy. |
 | Snapshot / rollback (VM off) | `cp -a --reflink=always ~/.windows ~/.windows.snap-<date>` | On btrfs a reflink copy is instant and free until blocks diverge. Rollback = copy back while stopped. User-owned, no root. |
 | Suspend to RAM | Pause | A cgroup freeze; see above. The guest clock resyncs on resume. |
@@ -134,9 +174,16 @@ to get it here, as far as Omarchy's helper allows:
 
 ## Polkit rule
 
-Optional. The widget works without it — every action just raises Omarchy's
-authentication dialog. `polkit/49-omawin.rules.in` is rendered with `@USER@`
-filled in, shown to you in full, and only then installed as
+Optional, and now a switch: **Settings** on the card (the gear in its title)
+shows the rule in full, says whether it is installed and for whom, and turns it
+on or off by running `sudo <plugin dir>/setup polkit [--remove]` in Omarchy's
+floating terminal — where `sudo` asks once and the file is printed before it is
+written. Nothing about that is quiet or automatic: a plugin install cannot and
+should not write to `/etc`.
+
+The widget works without it — every action just raises Omarchy's authentication
+dialog. `polkit/49-omawin.rules.in` is rendered with `@USER@` filled in, shown
+to you in full, and only then installed as
 `/etc/polkit-1/rules.d/49-omawin.rules`. It says YES to exactly five command
 lines for exactly one user:
 
@@ -153,6 +200,28 @@ is not a path to arbitrary root. `write_compose` and `remove` keep prompting,
 container, and every other user and action falls through to the normal
 prompt. The directory is `root:polkitd 0750`, so installing needs root;
 polkitd notices the new file by itself, nothing is restarted.
+
+**`write_compose` is deliberately left out**, even though Tune and Update
+password use it. Rewriting the VM's configuration is rare and worth a dialog:
+the rule is meant to make the start/stop cycle pleasant, not to hand every
+process running as you a promptless way to rewrite what a root-invoked
+`docker compose up` will consume. `setup polkit` even prints the two commands
+to check that with, and the second one must still prompt.
+
+Because that rules directory cannot be read as the user — no listing, no
+`test -f`, and `pkcheck --detail` refuses an unprivileged caller — `setup` also
+writes a user-owned copy of exactly what it installed to
+`~/.local/state/omawin/49-omawin.rules` (0644) and deletes it on `--remove`.
+The Settings switch is the presence of that copy; the user named inside it and
+its mtime are the card's "Installed for X on <date>". It is a record, not the
+truth: a rule removed by hand leaves the copy behind, which is why the card
+says *as recorded by setup* and the first prompted action makes it obvious.
+
+**Upgrading from 0.1.x with the rule already installed:** that copy does not
+exist yet, so the switch reads as off. Press **Install rule…** once (or run
+`sudo <plugin dir>/setup polkit`): the rule is rewritten unchanged and the copy
+appears. Until then the only effect is the wrong switch; the actions are
+already passwordless.
 
 Check first that pkexec's action details are what the rule matches on. The
 probe rule allows one read-only command line, `__priv status`, to the same one
@@ -202,8 +271,11 @@ omarchy bar put chaves.omawin --before omarchy.power
 `shell.json` hot-reloads, so the glyph appears at once; a changed `Panel.qml`
 needs `omarchy restart shell`. Everything about the layout goes through
 `omarchy bar` — never hand-edit `shell.json`. `node --test tests/` runs the
-sampler, the probe, the state machine and `setup` unprivileged against
-fixtures.
+sampler, the probe, the state machine, the tune and credentials helpers and
+`setup`, all unprivileged, against fixtures: `tests/fixtures/generate.sh`
+rebuilds the fake `/proc`, `/sys`, compose, credentials and the sparse
+`data.img` those use (that image is `.gitignore`'d — git would store all 64 GiB
+of it — and the tests create it themselves if it is missing).
 
 ### IPC
 
@@ -213,7 +285,7 @@ fixtures.
 | Method | Does |
 |--------|------|
 | `open` / `close` / `toggle` / `show` / `hide` | the popup |
-| `status` | one line: the painted state, the `vm-state.sh` line behind it and the bar tooltip, e.g. `stopped installed=1 docker=active pid= frozen= cores= ram= web=000 cid= started= \| Windows VM · STOPPED · 4 cores · 16G` |
+| `status` | one line: the painted state, the `vm-state.sh` line behind it and the bar tooltip, e.g. `stopped installed=1 docker=active pid= frozen= cores= ram= web=000 cid= started= disk=64G login=chaves \| Windows VM · STOPPED · 4 cores · 16G · 64G` |
 | `fail <text>` | **debug.** Paints the failed card with `<text>` as the message, without breaking anything to get there. Sticky like a real failure — cleared by the next successful action or state change, or at once with `fail ""`. |
 | `mock <line> [probe] [action]` | **debug.** Stands `<line>` in for `vm-state.sh`, `probe` (`ok`/`no`) in for the RDP probe and `action` (`start`/`stop`) in for a pending transient, so every face of the card can be looked at with the VM switched off. `mock "" "" ""` (all three arguments are required by the IPC) hands the widget back to the real sampler and drops the mocked transient. |
 
@@ -227,9 +299,14 @@ The helpers read a few environment variables so the tests can point them at
 fixtures: `PROC_ROOT`, `SYS_ROOT`, `COMPOSE_FILE`, `CREDENTIALS_FILE`,
 `DOCKER_STATE`, `WEB_CODE` for `vm-state.sh`; `RDP_HOST`, `RDP_PORT`,
 `RDP_TIMEOUT`, `RDP_PROTOCOLS` for `rdp-probe.sh` (shape-checked, the probe
-refuses anything but a dotted IPv4 address); `POLKIT_RULES_DIR` and
-`SETUP_SKIP_ROOT_CHECK` for `setup`. Nothing selects a program to run: the
-unit name and every command line are constants.
+refuses anything but a dotted IPv4 address); `DATA_IMAGE` for the disk reading;
+`HOST_CORES`, `HOST_RAM_GB`, `FREE_GB`, `WINDOWS_DIR`, `TZ_NAME` and
+`TUNE_DRY_RUN` for `tune.sh`; `CREDS_DRY_RUN` for `credentials.sh`;
+`OMAWIN_STATE_DIR` for `rule-state.sh`; `POLKIT_RULES_DIR`,
+`SETUP_SKIP_ROOT_CHECK`, `OMAWIN_STATE_DIR` and `SETUP_TARGET_HOME` for
+`setup`. The two dry runs stop before the one `pkexec` call and print what they
+would have piped into it, with the password replaced by `***`. Nothing selects
+a program to run: the unit name and every command line are constants.
 
 ### Layout
 
@@ -237,7 +314,20 @@ unit name and every command line are constants.
   `lib/State.js`, with `node --test tests/` over all three. The sampler also
   reports `started=`, the QEMU process's start time in epoch seconds, read
   from `/proc/<pid>/stat` field 22 and `/proc/stat`'s `btime` — no `ps`, no
-  fork — which is where "Uptime" comes from.
+  fork — which is where "Uptime" comes from, plus `disk=` (the apparent size of
+  `~/.windows/data.img`) and `login=` (the credentials file's `USERNAME` line,
+  never its password).
+- `helpers/tune.sh` — `limits` for what the Tune face may offer (nproc,
+  MemTotal, `df`, the current disk) and `apply` for the write: the writer's own
+  regexes applied client-side first, then cores ≤ nproc, RAM ≤ MemTotal, the
+  grow-only disk and the wizard's free-space rule, then one `pkexec` with the
+  six fields on stdin.
+- `helpers/credentials.sh` — `username`, `password`, `copy`, `clear` and
+  `write`: the reads the Login face makes, and the rewrite, which does the
+  compose first (that is the cancellable half) and then the credentials file,
+  atomically, the way `omarchy-windows-vm` writes it.
+- `helpers/rule-state.sh` — `present=/user=/since=` from the user-owned copy of
+  the polkit rule, which is the only unprivileged way to know it is there.
 - `Service.qml` — the 5 s/30 s state sampler, the 3 s/30 s RDP probe, the
   transients, the sticky failure, and the actions: Start and Connect through
   `helpers/launch.sh` (the transient user unit `omawin-launch`) with the
@@ -249,8 +339,11 @@ unit name and every command line are constants.
 - `Panel.qml` — the bar glyph (state by colour, a pause badge, a pulse while
   the VM is coming up or going down, `bar.urgent` on a failure, the state,
   the VM's shape and its uptime in the tooltip, middle click =
-  Start/Connect) and the popup card: one face per state, drawn with the
-  shell's own `PopupCard`/`PanelHero`/`Button` kit.
+  Start/Connect) and the popup card: one face per state plus the four
+  sub-faces (`face`: Tune, Login, Update password, Settings), all drawn with
+  the shell's own `PopupCard`/`PanelHero`/`Button`/`ToggleSwitch`/`TextField`
+  kit. The two that rewrite the compose close themselves if the VM stops being
+  stopped underneath them.
 - `polkit/49-omawin.rules.in`, `polkit/49-omawin-probe.rules.in` and `setup`
   — the rule that makes the cycle passwordless, its probe, and the script that
   shows and installs them.

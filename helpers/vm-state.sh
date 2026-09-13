@@ -4,9 +4,9 @@
 # Prints ONE line of key=value pairs; every key is always present, so the
 # caller can parse it without caring which state the VM is in:
 #
-#   installed=1 docker=active pid=1360395 frozen=0 cores=4 ram=16G web=401 cid=3fff20be… started=1757555121
-#   installed=1 docker=active pid= frozen= cores= ram= web=000 cid= started=
-#   installed=0 docker=active pid= frozen= cores= ram= web=000 cid= started=
+#   installed=1 docker=active pid=1360395 frozen=0 cores=4 ram=16G web=401 cid=3fff20be… started=1757555121 disk=64G login=chaves
+#   installed=1 docker=active pid= frozen= cores= ram= web=000 cid= started= disk=64G login=chaves
+#   installed=0 docker=active pid= frozen= cores= ram= web=000 cid= started= disk= login=
 #
 #   installed  both the compose and the credentials file exist (1/0)
 #   docker     systemctl is-active docker.service
@@ -22,6 +22,15 @@
 #              /proc/<pid>/stat (ticks since boot) over USER_HZ, which is 100
 #              on Linux whatever the kernel HZ, plus /proc/stat's btime. No
 #              getconf, no ps, no fork. Empty when there is no pid.
+#   disk       the VM's disk as the guest sees it: the APPARENT size of
+#              ~/.windows/data.img (stat -c %s, the user's own file — the image
+#              is sparse, so this is the configured DISK_SIZE and not the space
+#              it occupies), in whole GiB with a G, e.g. 64G. Empty when the
+#              file is missing or not a whole number of GiB. This is the only
+#              readable record of DISK_SIZE: the compose is root:docker 0640.
+#   login      the USERNAME line of the credentials file, nothing else. The
+#              password is never printed, never read here: the Login face asks
+#              helpers/credentials.sh for it, on demand.
 #
 # When installed=0 there is no Omarchy VM to look at, so neither the /proc
 # scan nor the web probe runs and every other key comes back empty.
@@ -35,6 +44,7 @@
 #   SYS_ROOT          sysfs root             (default /sys)
 #   COMPOSE_FILE      Omarchy's compose      (default /var/lib/omarchy/windows/docker-compose.yml)
 #   CREDENTIALS_FILE  the VM credentials     (default ~/.config/windows/credentials)
+#   DATA_IMAGE        the guest disk image   (default ~/.windows/data.img)
 #   DOCKER_STATE      skip systemctl, use this value
 #   WEB_CODE          skip curl, use this value (still only when installed)
 
@@ -49,6 +59,7 @@ proc_root=${PROC_ROOT:-/proc}
 sys_root=${SYS_ROOT:-/sys}
 compose=${COMPOSE_FILE:-/var/lib/omarchy/windows/docker-compose.yml}
 credentials=${CREDENTIALS_FILE:-$HOME/.config/windows/credentials}
+data_image=${DATA_IMAGE:-$HOME/.windows/data.img}
 
 installed=0
 [[ -f $compose && -f $credentials ]] && installed=1
@@ -56,8 +67,26 @@ installed=0
 docker=${DOCKER_STATE-$(/usr/bin/systemctl is-active docker.service 2>/dev/null)}
 [[ $docker =~ ^[a-z-]{0,32}$ ]] || docker=
 
-pid= frozen= cores= ram= cid= started= web=000
+pid= frozen= cores= ram= cid= started= web=000 disk= login=
 if ((installed)); then
+  # The guest disk, in whole GiB. stat prints the apparent size, which for this
+  # sparse image is the DISK_SIZE the compose was written with — the compose
+  # itself is root:docker 0640 and cannot be read here.
+  if bytes=$(/usr/bin/stat -Lc '%s' -- "$data_image" 2>/dev/null) &&
+    [[ $bytes =~ ^[0-9]{1,19}$ ]] && ((10#$bytes >= 1073741824)) &&
+    ((10#$bytes % 1073741824 == 0)); then
+    disk=$((10#$bytes / 1073741824))G
+  fi
+  [[ $disk =~ ^[0-9]{1,4}G$ ]] || disk=
+  # Only the username, and only if it looks like one (the helper's own
+  # valid_username). IFS on the first = is how omarchy-windows-vm reads this
+  # file; the PASSWORD line is skipped without ever being assigned.
+  while IFS='=' read -r key value; do
+    [[ $key == USERNAME ]] || continue
+    login=$value
+    break
+  done 2>/dev/null <"$credentials"
+  [[ $login =~ ^[A-Za-z0-9_-]{1,20}$ ]] || login=
   for comm_file in "$proc_root"/[0-9]*/comm; do
     read -r comm 2>/dev/null <"$comm_file" || continue
     [[ $comm == windows ]] || continue
@@ -113,5 +142,6 @@ if ((installed)); then
   [[ $web =~ ^[0-9]{3}$ ]] || web=000
 fi
 
-printf 'installed=%s docker=%s pid=%s frozen=%s cores=%s ram=%s web=%s cid=%s started=%s\n' \
-  "$installed" "$docker" "$pid" "$frozen" "$cores" "$ram" "$web" "$cid" "$started"
+printf 'installed=%s docker=%s pid=%s frozen=%s cores=%s ram=%s web=%s cid=%s started=%s disk=%s login=%s\n' \
+  "$installed" "$docker" "$pid" "$frozen" "$cores" "$ram" "$web" "$cid" "$started" \
+  "$disk" "$login"

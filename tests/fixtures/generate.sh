@@ -1,8 +1,14 @@
 #!/bin/bash
 # Regenerates tests/fixtures/{running,paused,stopped,not-installed}: a fake
-# /proc + /sys + compose + credentials per state, so helpers/vm-state.sh can be
-# run for real without a VM. The generated files are committed; this script is
-# here to document where they came from.
+# /proc + /sys + compose + credentials + data.img per state, so
+# helpers/vm-state.sh can be run for real without a VM. The generated files are
+# committed; this script is here to document where they came from.
+#
+# The exception is data.img, the guest disk the sampler reads the VM's DISK_SIZE
+# off: 64 GiB of nothing, created with truncate, so it costs no blocks. It is
+# .gitignore'd for the obvious reason — git would store the whole 64 GiB — and
+# tests/helpers.mjs creates it on demand, with exactly this size, for a checkout
+# that has never run this script.
 #
 # The running/paused command lines are trimmed copies of the real one on this
 # box (dockur/windows 6.05, Omarchy 4.0.3-1), NUL separated like /proc. Each
@@ -75,6 +81,9 @@ base() { # fixture  -- an empty install plus the three decoys
     >"$here/$f/proc/stat"
   printf 'name: windows\n' >"$here/$f/docker-compose.yml"
   printf 'USERNAME=chaves\nPASSWORD=secret\n' >"$here/$f/credentials"
+  # The sparse guest disk: apparent size 64 GiB, zero blocks used. `disk=64G`
+  # on the sampler's line is stat -c %s of this file.
+  truncate -s 64G "$here/$f/data.img"
 
   proc "$f" 1001 windows /user.slice/user-1000.slice/session-2.scope 100
   qemu "$f" 1001

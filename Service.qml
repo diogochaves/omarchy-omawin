@@ -12,17 +12,26 @@ import "lib/State.js" as State
 // Two samplers feed it, both unprivileged:
 //
 //   helpers/vm-state.sh   one line of key=value — installed, docker, pid,
-//                         frozen, cores, ram, web, cid — every 5 s (30 s with
-//                         nothing installed), plus a re-sample whenever the
-//                         panel opens and right after every action.
+//                         frozen, cores, ram, web, cid, disk, login — every
+//                         5 s (30 s with nothing installed), plus a re-sample
+//                         whenever the panel opens and right after every
+//                         action.
 //   helpers/rdp-probe.sh  an X.224 Connection Request to 127.0.0.1:3389;
 //                         every 3 s while the guest boots, every 30 s once it
 //                         answers (to notice a guest reboot), never otherwise.
 //
 // One small file is written: $XDG_STATE_HOME/omawin/state.json, the shape of
-// the VM (cores, RAM), when this run of it started and when it was last seen
-// running — that is what the stopped card's pill and "Last run" show. It is
-// pure cache: deleting it only blanks those two readouts until the next run.
+// the VM (cores, RAM, disk), when this run of it started, when it was last seen
+// running and — after Tune — the shape the next start will use. That is what
+// the stopped card's pill and "Last run" show. It is pure cache: deleting it
+// only blanks those readouts until the next run.
+//
+// Three more actions arrived with the Tune, Login and Settings faces, all of
+// them here rather than in the panel: helpers/tune.sh (the VM's shape, one
+// pkexec'd write_compose), helpers/credentials.sh (the RDP login: read,
+// clipboard, rewrite) and Omarchy's floating terminal around this plugin's own
+// `setup polkit`, which is the only way the optional rule is ever installed.
+// None of the three is in the polkit rule: they prompt, every time, on purpose.
 //
 // The docker CLI is called in exactly one place, Pause/Resume, and only
 // through `pkexec /usr/bin/docker pause|unpause omarchy-windows` — one of the
@@ -92,11 +101,33 @@ QtObject {
   readonly property string detail: State.detail(root.sample, root.cached)
   readonly property string tooltip: State.tooltip(root.state, root.sample, root.desired,
     root.cached, root.nowMs)
-  // The stopped card's two readings, live or cached, and its "Last run".
-  readonly property string coresText: root.sample.cores ? String(root.sample.cores)
-    : (root.cached && root.cached.cores ? String(root.cached.cores) : "—")
-  readonly property string ramText: root.sample.ram ? root.sample.ram
-    : (root.cached && root.cached.ram ? String(root.cached.ram) : "—")
+  // The shape Tune has written and the next start will use, or null. While it
+  // is set the pill, the readouts below and the tooltip all show it instead of
+  // the shape the VM last ran with — that is the whole point of writing it down.
+  readonly property var pending: State.showsPending(root.sample, root.cached)
+    ? State.pendingShape(root.cached) : null
+
+  // The stopped card's readings, live or cached, and its "Last run".
+  readonly property string coresText: root.pending ? String(root.pending.cores)
+    : (root.sample.cores ? String(root.sample.cores)
+      : (root.cached && root.cached.cores ? String(root.cached.cores) : "—"))
+  readonly property string ramText: root.pending ? root.pending.ram
+    : (root.sample.ram ? root.sample.ram
+      : (root.cached && root.cached.ram ? String(root.cached.ram) : "—"))
+  // The disk is the apparent size of ~/.windows/data.img, which is ours to read
+  // whether or not the VM runs; the cache only covers a helper that reported
+  // none. `diskNote` is the mockup's "from 64G": after a Tune that grows it,
+  // the pair shows what the next start will make it and what it is now.
+  readonly property string currentDisk: root.sample.disk ? root.sample.disk
+    : (root.cached && root.cached.disk ? String(root.cached.disk) : "")
+  readonly property string diskText: root.pending && root.pending.disk
+    ? root.pending.disk : (root.currentDisk !== "" ? root.currentDisk : "—")
+  readonly property string diskNote: root.pending && root.pending.disk
+    && root.currentDisk !== "" && root.pending.disk !== root.currentDisk
+    ? "from " + root.currentDisk : ""
+  // The USERNAME line of the credentials file. The password is never sampled:
+  // the Login face asks helpers/credentials.sh for it when it is asked to.
+  readonly property string loginText: root.sample.login !== "" ? root.sample.login : "—"
   readonly property string lastRunText: State.lastRun(root.cached, root.nowMs)
   // The ready card's "Uptime", from /proc, so it survives a bar reload — and
   // re-evaluates every second while the panel is open, because nowMs does.
@@ -110,6 +141,10 @@ QtObject {
   readonly property bool busy: launchProc.running || stopProc.running || installProc.running
     || disconnectProc.running
     || pauseProc.running || resumeProc.running
+    // The three configuration actions count too: Apply, Save and the terminal
+    // that installs the polkit rule all grey every button out while they run,
+    // so a start cannot be stacked on top of a compose rewrite.
+    || tuneProc.running || saveProc.running || polkitProc.running
 
   // When the current episode began: the moment Start/Stop was pressed while a
   // transient is pending, otherwise the moment this QEMU process first showed
@@ -131,10 +166,15 @@ QtObject {
     Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "").replace(/\/$/, ""))
   readonly property string helpers: directory + "/helpers"
   readonly property string home: Quickshell.env("HOME")
+  // Only ever printed: the Settings face names the user the polkit rule would
+  // be written for, before `setup` has written one to read the name back out of.
+  readonly property string user: Quickshell.env("USER")
 
   // --------------------------------------------------------------- the cache
-  // What a stopped VM still knows about itself: {cores, ram, started,
-  // lastSeen}, written from the last running sample. Persistent user state
+  // What a stopped VM still knows about itself: {cores, ram, disk, started,
+  // lastSeen} written from the last running sample, plus {pending} after a
+  // Tune — the shape the next `docker compose up` will use, which nothing else
+  // can tell us while the VM is off. Persistent user state
   // rather than regeneratable cache in the XDG sense — nothing else can
   // recreate "the VM last ran at 09:15" — so it lives under XDG_STATE_HOME,
   // like the shell's own notification history. Deleting the file is safe: the
@@ -193,8 +233,12 @@ QtObject {
         root.cached = {
           cores: Number.isInteger(cores) && cores > 0 && cores <= 1024 ? cores : 0,
           ram: typeof parsed.ram === "string" && State.RAM_SHAPE.test(parsed.ram) ? parsed.ram : "",
+          disk: typeof parsed.disk === "string" && State.DISK_SHAPE.test(parsed.disk) ? parsed.disk : "",
           started: Number.isInteger(started) && started > 0 && started * 1000 < horizon ? started : 0,
-          lastSeen: Number.isInteger(lastSeen) && lastSeen > 0 && lastSeen < horizon ? lastSeen : 0
+          lastSeen: Number.isInteger(lastSeen) && lastSeen > 0 && lastSeen < horizon ? lastSeen : 0,
+          // State.pendingShape does the checking: a pending shape that does not
+          // fit the writer's own spellings is dropped, not printed.
+          pending: State.pendingShape(parsed)
         }
       }
     }
@@ -212,18 +256,38 @@ QtObject {
     root.cached = next
     if (!root.cacheLoaded) return
     var shapeMoved = !previous || previous.cores !== next.cores
-      || previous.ram !== next.ram || previous.started !== next.started
+      || previous.ram !== next.ram || previous.disk !== next.disk
+      || previous.started !== next.started
+      // A `pending` that has just been consumed by a start has to reach the
+      // file at once: it is what the pill and the banner are reading.
+      || (!!previous.pending !== !!next.pending)
     if (!shapeMoved && now - root.cacheWrittenAt < 60000) return
     root.cacheWrittenAt = now
     cacheFile.setText(JSON.stringify(next, null, 2) + "\n")
   }
 
-  // A reloaded or removed plugin must not leave a poller behind.
+  // Tune's own write: the shape the next start will use, stored beside the one
+  // the VM last ran with. State.cachePending builds it, the VM being off means
+  // no sample can, and State.cacheFrom drops it again the moment QEMU appears.
+  function writePending(shape) {
+    var next = State.cachePending(root.cached, shape)
+    root.cached = next
+    if (!root.cacheLoaded) return
+    root.cacheWrittenAt = Date.now()
+    cacheFile.setText(JSON.stringify(next, null, 2) + "\n")
+  }
+
+  // A reloaded or removed plugin must not leave a poller behind — nor the
+  // password on the clipboard, if a Copy is still inside its 30 s window.
   Component.onDestruction: {
+    if (root.copied) clipboardClearProc.running = true
     sampleTimer.running = false
     probeTimer.running = false
     unitTimer.running = false
     tickTimer.running = false
+    revealTimer.running = false
+    clipboardTimer.running = false
+    ruleTimer.running = false
     sampleProc.running = false
     probeProc.running = false
     unitProc.running = false
@@ -285,6 +349,9 @@ QtObject {
       || (next.frozen !== previous.frozen && !stopping)
       || (next.installed !== previous.installed)
     if (moved) root.clearDesired()
+    // QEMU appearing means a pending shape has just been consumed, so the
+    // "Shape saved" banner has said all it had to say.
+    if (next.pid && !previous.pid) root.clearNotice()
     if (next.pid) root.checkUnit()
     else root.sessionOpen = false
 
@@ -418,6 +485,7 @@ QtObject {
 
   function start() {
     if (root.busy) return
+    root.clearNotice()
     root.setDesired("start")
     root.launching = true
     launchProc.running = true
@@ -666,6 +734,364 @@ QtObject {
         return
       }
       root.refresh()
+    }
+  }
+
+  // ---------------------------------------------------------- the notice
+  // The one-line banner the configuration faces answer with: green after a
+  // shape or a password was written, urgent with the helper's own stderr when
+  // one was refused. It is NOT the sticky failure — a refused compose rewrite
+  // changes nothing about the VM, so the card must not go red and claim the VM
+  // failed. Cleared by the next Start (the shape it describes is in use from
+  // then on), by the VM coming up, and by opening either face again.
+  property string noticeText: ""
+  property bool noticeOk: false
+
+  function notice(text, ok) {
+    root.noticeText = root.plain(text, 400).replace(/^\s+|\s+$/g, "")
+    root.noticeOk = !!ok
+  }
+
+  function clearNotice() {
+    root.noticeText = ""
+    root.noticeOk = false
+  }
+
+  // ----------------------------------------------------------- the limits
+  // What the Tune face is allowed to offer, read once per visit: nproc, the
+  // machine's total RAM, the free space where data.img lives and the size that
+  // image already has. All four are plain unprivileged readings and none of
+  // them needs the VM; see helpers/tune.sh.
+
+  property var limits: null
+  readonly property int hostCores: root.limits && root.limits.cores > 0 ? root.limits.cores : 0
+  readonly property int hostRamGb: root.limits && root.limits.ram > 0 ? root.limits.ram : 0
+  readonly property int freeGb: root.limits && root.limits.free >= 0 ? root.limits.free : -1
+  // The disk and the login are on that line too, and are checked here, but the
+  // card reads both off the 5 s sampler: they are the same two files.
+
+  function readLimits() {
+    if (!limitsProc.running) limitsProc.running = true
+  }
+
+  property Process limitsProc: Process {
+    command: ["/usr/bin/timeout", "-k", "2", "10", "/usr/bin/bash", root.helpers + "/tune.sh", "limits"]
+    environment: ({ LC_ALL: "C" })
+    stdout: StdioCollector { id: limitsOut; waitForEnd: true }
+    onExited: function (code) {
+      if (code !== 0) return
+      var fields = {}
+      var parts = root.plain(root.lastLine(limitsOut.text), 200).split(/\s+/)
+      for (var i = 0; i < parts.length; i++) {
+        var eq = parts[i].indexOf("=")
+        if (eq > 0) fields[parts[i].substring(0, eq)] = parts[i].substring(eq + 1)
+      }
+      root.limits = {
+        cores: /^[0-9]{1,4}$/.test(fields.cores) ? parseInt(fields.cores, 10) : 0,
+        ram: /^[0-9]{1,6}$/.test(fields.ram) ? parseInt(fields.ram, 10) : 0,
+        free: /^[0-9]{1,9}$/.test(fields.free) ? parseInt(fields.free, 10) : -1,
+        disk: State.DISK_SHAPE.test(fields.disk || "") ? fields.disk : "",
+        login: State.LOGIN_SHAPE.test(fields.login || "") ? fields.login : ""
+      }
+    }
+  }
+
+  // ------------------------------------------------------------- the tune
+  // One privileged action, `__priv write_compose`, with the login read out of
+  // the credentials file by the helper and never seen here. It is the same
+  // action Omarchy's install wizard ends on; nothing is re-downloaded and
+  // data.img is kept. Deliberately not in the polkit rule: this prompts.
+  //
+  // The written shape only takes effect at the next `docker compose up`, so it
+  // goes into the cache as `pending` and the card says "next start".
+
+  signal shapeApplied()
+
+  property var tuneShape: ({ cores: 0, ram: "", disk: "" })
+
+  function applyShape(cores, ram, disk) {
+    if (root.busy) return
+    if (!(cores > 0) || !State.RAM_SHAPE.test(String(ram)) || !State.DISK_SHAPE.test(String(disk))) return
+    root.clearNotice()
+    root.tuneShape = { cores: Math.floor(cores), ram: String(ram), disk: String(disk) }
+    tuneProc.running = true
+  }
+
+  property Process tuneProc: Process {
+    command: ["/usr/bin/bash", root.helpers + "/tune.sh", "apply",
+      "--cores", String(root.tuneShape.cores),
+      "--ram", root.tuneShape.ram,
+      "--disk", root.tuneShape.disk]
+    environment: ({ LC_ALL: "C" })
+    stderr: StdioCollector { id: tuneErr; waitForEnd: true }
+    onExited: function (code) {
+      var message = root.lastLine(tuneErr.text)
+      if (code === 0) {
+        var shape = root.tuneShape
+        var grew = root.currentDisk !== "" && shape.disk !== root.currentDisk
+        root.writePending(shape)
+        root.notice("Shape saved. The next start runs with "
+          + State.shape(shape.cores, shape.ram, shape.disk) + "."
+          + (grew ? " Windows sees the extra space as unallocated; extend C: in Disk Management once it is up." : ""),
+          true)
+        root.shapeApplied()
+      } else if (root.dismissed(message)) {
+        // The authentication dialog was closed: nothing was written, nothing to
+        // report. The face stays as it was, with its controls still set.
+        root.clearNotice()
+      } else {
+        root.notice(message || "could not write the VM configuration", false)
+      }
+      root.readLimits()
+      root.refresh()
+    }
+  }
+
+  // ------------------------------------------------------------ the login
+  // The RDP login, straight out of ~/.config/windows/credentials — the file
+  // omarchy-windows-vm's own launch reads for xfreerdp. Four one-shot calls
+  // into helpers/credentials.sh, none of which puts the password in an
+  // argument: it is printed on stdout for Reveal, piped to wl-copy for Copy,
+  // and read from stdin for Save.
+
+  signal passwordSaved()
+
+  // Only set while Reveal is showing it, cleared by the 15 s timer, by the
+  // panel closing (Panel.qml calls maskPassword()) and by a failed read.
+  property string revealedPassword: ""
+  readonly property bool revealed: root.revealedPassword !== ""
+  // Set for the few seconds after Copy, so the button can say so.
+  property bool copied: false
+
+  function revealPassword() {
+    if (passwordProc.running) return
+    passwordProc.running = true
+  }
+
+  function maskPassword() {
+    root.revealedPassword = ""
+    revealTimer.running = false
+  }
+
+  property Process passwordProc: Process {
+    command: ["/usr/bin/timeout", "-k", "2", "10", "/usr/bin/bash", root.helpers + "/credentials.sh", "password"]
+    environment: ({ LC_ALL: "C" })
+    stdout: StdioCollector { id: passwordOut; waitForEnd: true }
+    stderr: StdioCollector { id: passwordErr; waitForEnd: true }
+    onExited: function (code) {
+      if (code !== 0) {
+        root.notice(root.lastLine(passwordErr.text) || "could not read the stored password", false)
+        return
+      }
+      // Only the trailing newline the helper's printf added is dropped: a
+      // password may legitimately start or end with a space, so lastLine's trim
+      // would show a different password than the one that logs in. `plain`
+      // cannot alter the rest — the writer's rule is printable ASCII — and the
+      // cap is that rule's 64 characters.
+      root.revealedPassword = root.plain(String(passwordOut.text).replace(/\n$/, ""), 64)
+      revealTimer.restart()
+    }
+  }
+
+  // Re-masks by itself: a password left on screen is the one thing this face
+  // must not do. The panel closing does the same, immediately.
+  property Timer revealTimer: Timer {
+    interval: 15000
+    repeat: false
+    onTriggered: root.maskPassword()
+  }
+
+  function copyPassword() {
+    if (copyProc.running) return
+    copyProc.running = true
+  }
+
+  property Process copyProc: Process {
+    command: ["/usr/bin/timeout", "-k", "2", "10", "/usr/bin/bash", root.helpers + "/credentials.sh", "copy"]
+    environment: ({ LC_ALL: "C" })
+    stderr: StdioCollector { id: copyErr; waitForEnd: true }
+    onExited: function (code) {
+      if (code !== 0) {
+        root.notice(root.lastLine(copyErr.text) || "could not reach the clipboard", false)
+        return
+      }
+      root.copied = true
+      clipboardTimer.restart()
+    }
+  }
+
+  // The clipboard is cleared 30 s later rather than left holding the password
+  // for whatever manager is watching it. A plain timed clear: if something else
+  // has taken the selection since, `wl-copy --clear` only drops ours.
+  property Timer clipboardTimer: Timer {
+    interval: 30000
+    repeat: false
+    onTriggered: {
+      root.copied = false
+      clipboardClearProc.running = true
+    }
+  }
+
+  property Process clipboardClearProc: Process {
+    command: ["/usr/bin/bash", root.helpers + "/credentials.sh", "clear"]
+    environment: ({ LC_ALL: "C" })
+  }
+
+  // Save rewrites the compose (one authorisation, the same write_compose Tune
+  // uses, so the copy of the password inside it agrees) and then the
+  // credentials file. The shape goes along unchanged: the writer takes all six
+  // fields or none. With no shape known there is nothing to send, and the panel
+  // says so rather than guessing — hence the guard here too.
+  readonly property bool canSavePassword: root.coresText !== "—" && root.ramText !== "—"
+    && root.currentDisk !== ""
+
+  property string pendingPassword: ""
+
+  // The helper's own rule, checked here too: ^[[:print:]]{1,64}$ under LC_ALL=C
+  // is ASCII 0x20 to 0x7e. Saying so is friendlier than a button that looks
+  // pressed and does nothing.
+  readonly property var passwordShape: /^[ -~]{1,64}$/
+
+  function savePassword(text) {
+    if (root.busy) return
+    var value = String(text)
+    if (!root.passwordShape.test(value)) {
+      root.notice("The password must be 1 to 64 printable characters.", false)
+      return
+    }
+    if (!root.canSavePassword) return
+    root.clearNotice()
+    root.pendingPassword = value
+    saveProc.running = true
+  }
+
+  property Process saveProc: Process {
+    command: ["/usr/bin/bash", root.helpers + "/credentials.sh", "write",
+      "--cores", root.coresText, "--ram", root.ramText]
+    environment: ({ LC_ALL: "C" })
+    stdinEnabled: true
+    stderr: StdioCollector { id: saveErr; waitForEnd: true }
+    // The new password crosses to the helper here and nowhere else: on stdin,
+    // never in argv, and dropped from this object the moment it is written.
+    onStarted: {
+      write(root.pendingPassword + "\n")
+      root.pendingPassword = ""
+      stdinEnabled = false
+    }
+    onExited: function (code) {
+      var message = root.lastLine(saveErr.text)
+      root.pendingPassword = ""
+      if (code === 0) {
+        root.maskPassword()
+        root.notice("Password saved. Connect will use it from now on.", true)
+        root.passwordSaved()
+      } else if (root.dismissed(message)) {
+        root.clearNotice()
+      } else {
+        root.notice(message || "could not save the password", false)
+      }
+      root.refresh()
+    }
+  }
+
+  // ------------------------------------------------------- the polkit rule
+  // The optional rule that makes Start, Stop, Pause and Resume promptless.
+  // Installing it needs root, so it happens where root belongs: Omarchy's
+  // floating terminal, running this plugin's own `setup polkit`, which prints
+  // the rule in full and asks before writing anything. The widget only reads
+  // the user-owned copy setup leaves behind — /etc/polkit-1/rules.d is
+  // root:polkitd 0750 and cannot be looked at from here at all.
+
+  property bool rulePresent: false
+  property string ruleUser: ""
+  property double ruleSince: 0
+
+  function readRule() {
+    if (!ruleProc.running) ruleProc.running = true
+  }
+
+  property Process ruleProc: Process {
+    command: ["/usr/bin/timeout", "-k", "2", "5", "/usr/bin/bash", root.helpers + "/rule-state.sh"]
+    environment: ({ LC_ALL: "C" })
+    stdout: StdioCollector { id: ruleOut; waitForEnd: true }
+    onExited: function (code) {
+      if (code !== 0) return
+      var fields = {}
+      var parts = root.plain(root.lastLine(ruleOut.text), 200).split(/\s+/)
+      for (var i = 0; i < parts.length; i++) {
+        var eq = parts[i].indexOf("=")
+        if (eq > 0) fields[parts[i].substring(0, eq)] = parts[i].substring(eq + 1)
+      }
+      root.rulePresent = fields.present === "1"
+      root.ruleUser = /^[a-z_][a-z0-9_-]{0,31}$/.test(fields.user || "") ? fields.user : ""
+      root.ruleSince = /^[0-9]{1,12}$/.test(fields.since || "") ? Number(fields.since) : 0
+    }
+  }
+
+  // "12 Sep 2026", the date the copy was written. Spelled out by hand for the
+  // same reason State.lastRun is: toLocaleString would follow two different
+  // locales in QML and in node.
+  readonly property string ruleSinceText: root.ruleSince > 0
+    ? State.dateText(root.ruleSince * 1000) : ""
+
+  property bool ruleRemoving: false
+
+  // Omarchy's floating-terminal wrapper joins its arguments into ONE shell
+  // command string (`cmd="$*"` into `bash -c`), so the only argument that is
+  // not a constant is quoted here: a plugin directory with a space in it would
+  // otherwise split into two words, and anything shell-ish in the path would be
+  // interpreted. Single quotes, with any single quote in the path escaped the
+  // POSIX way.
+  readonly property string setupCommand:
+    "'" + root.directory.replace(/'/g, "'\\''") + "/setup'"
+
+  function installRule() {
+    if (root.busy) return
+    root.ruleRemoving = false
+    root.ruleExpected = true
+    polkitProc.running = true
+  }
+
+  function removeRule() {
+    if (root.busy) return
+    root.ruleRemoving = true
+    root.ruleExpected = false
+    polkitProc.running = true
+  }
+
+  property Process polkitProc: Process {
+    command: root.ruleRemoving
+      ? ["/usr/share/omarchy/bin/omarchy-launch-floating-terminal-with-presentation",
+        "/usr/bin/sudo", root.setupCommand, "polkit", "--remove"]
+      : ["/usr/share/omarchy/bin/omarchy-launch-floating-terminal-with-presentation",
+        "/usr/bin/sudo", root.setupCommand, "polkit"]
+    onExited: function (code) {
+      // The terminal is another window and this process is only its launcher:
+      // it returns while the user is still reading the rule, and its exit code
+      // says nothing about what they answered. So the copy on disk is asked
+      // again now and then for the next two minutes, and the switch follows by
+      // itself the moment `setup` has written (or deleted) it.
+      root.readRule()
+      root.rulePolls = 40
+      root.refresh()
+    }
+  }
+
+  // What the terminal was opened to do, and how many 3 s checks are left before
+  // the widget stops waiting for it to have happened.
+  property bool ruleExpected: false
+  property int rulePolls: 0
+
+  property Timer ruleTimer: Timer {
+    interval: 3000
+    repeat: true
+    running: root.rulePolls > 0
+    onTriggered: {
+      root.rulePolls -= 1
+      // Either the user has answered, or they have not and there is nothing
+      // more to learn by asking again.
+      if (root.rulePresent === root.ruleExpected) root.rulePolls = 0
+      else root.readRule()
     }
   }
 

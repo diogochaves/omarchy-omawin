@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 export const root = path.resolve(import.meta.dirname, '..')
@@ -16,6 +16,28 @@ export function load(relative) {
   return new Function(source + '\nreturn {' + names.join(',') + '}')()
 }
 
+// The guest disk every fixture carries: 64 GiB of nothing. tests/fixtures/
+// generate.sh makes it with truncate and .gitignore keeps it out of the repo
+// (git would store all 64 GiB of zeros), so it is created here on demand — a
+// fresh clone must not need the generator to run the sampler.
+export const DATA_IMAGE_BYTES = 64 * 1024 * 1024 * 1024
+
+export function dataImage(name, bytes = DATA_IMAGE_BYTES) {
+  const file = path.join(fixtures, name, 'data.img')
+  let size = -1
+  try {
+    size = fs.statSync(file).size
+  } catch {
+    size = -1
+  }
+  if (size !== bytes) {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, '')
+    fs.truncateSync(file, bytes)
+  }
+  return file
+}
+
 // Runs the real helpers/vm-state.sh against tests/fixtures/<name>/, with every
 // root it reads pointed inside the fixture. DOCKER_STATE and WEB_CODE stand in
 // for the two forks so the tests need neither systemd nor a listening port.
@@ -28,11 +50,28 @@ export function vmState(name, extra = {}) {
       SYS_ROOT: path.join(dir, 'sys'),
       COMPOSE_FILE: path.join(dir, 'docker-compose.yml'),
       CREDENTIALS_FILE: path.join(dir, 'credentials'),
+      DATA_IMAGE: dataImage(name),
       DOCKER_STATE: 'active',
       WEB_CODE: '000',
       ...extra
     }
   }).replace(/\n$/, '')
+}
+
+// Runs any of the helpers and hands back both streams and the status, because
+// the two configuration helpers say what they refused on stderr and that text
+// is what ends up on the card. Never throws on a non-zero status: a refusal is
+// what most of these tests are about.
+export function helper(script, args = [], env = {}, input = undefined) {
+  const result = spawnSync('/bin/bash', [path.join('helpers', script), ...args], {
+    cwd: root, encoding: 'utf8', input,
+    env: { ...process.env, LC_ALL: 'C', ...env }
+  })
+  return {
+    status: result.status,
+    out: (result.stdout || '').replace(/\n$/, ''),
+    err: (result.stderr || '').replace(/\n$/, '')
+  }
 }
 
 // Runs the real helpers/rdp-probe.sh and resolves to its exit status. It has

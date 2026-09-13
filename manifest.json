@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "id": "chaves.omawin",
   "name": "Omawin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Diogo Chaves",
   "license": "MIT",
-  "description": "Start, connect to and stop Omarchy's Docker-based Windows VM from the bar, with no access to the Docker socket: status comes from /proc, a cgroup freeze file and a TCP probe of the guest's RDP port.",
+  "description": "Start, connect to and stop Omarchy's Docker-based Windows VM from the bar, tune its cores, RAM and disk, and keep its RDP login, with no access to the Docker socket: status comes from /proc, a cgroup freeze file and a TCP probe of the guest's RDP port.",
   "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "Panel.qml"
   },
   "barWidget": {
     "displayName": "Windows VM",
-    "description": "State of the Omarchy Windows VM, with Start, Connect and Stop.",
+    "description": "State of the Omarchy Windows VM, with Start, Connect, Stop and its shape and login.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right"

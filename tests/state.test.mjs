@@ -15,6 +15,11 @@ const ABSENT = 'installed=0 docker=active pid= frozen= cores= ram= web=000 cid= 
 // 1 h 12 m after the VM started, to the second: the mockup's tooltip.
 const NOW = (STARTED + 72 * 60) * 1000
 
+// The same two lines as a 0.2.0 sampler prints them, with the disk and the
+// login on the end.
+const RUNNING_FULL = RUNNING + ' disk=64G login=chaves'
+const STOPPED_FULL = STOPPED + ' disk=64G login=chaves'
+
 const NONE = { action: null, since: 0, failed: '' }
 const OK = { ok: true, at: 1000 }
 const NO = { ok: false, at: 1000 }
@@ -22,28 +27,31 @@ const NO = { ok: false, at: 1000 }
 test('parseSample reads a running line', () => {
   assert.deepEqual(State.parseSample(RUNNING), {
     installed: true, docker: 'active', pid: 1360395, frozen: false,
-    cores: 4, ram: '16G', web: 401, cid: CID, started: STARTED
+    cores: 4, ram: '16G', web: 401, cid: CID, started: STARTED,
+    // Not on the phase 1-4 lines these constants are: an older sampler's line
+    // parses, it just carries no disk and no login.
+    disk: '', login: ''
   })
 })
 
 test('parseSample reads a stopped line, empty values and all', () => {
   assert.deepEqual(State.parseSample(STOPPED), {
     installed: true, docker: 'active', pid: 0, frozen: false,
-    cores: 0, ram: '', web: 0, cid: '', started: 0
+    cores: 0, ram: '', web: 0, cid: '', started: 0, disk: '', login: ''
   })
 })
 
 test('parseSample reads a not-installed line', () => {
   assert.deepEqual(State.parseSample(ABSENT), {
     installed: false, docker: 'active', pid: 0, frozen: false,
-    cores: 0, ram: '', web: 0, cid: '', started: 0
+    cores: 0, ram: '', web: 0, cid: '', started: 0, disk: '', login: ''
   })
 })
 
 test('parseSample survives garbage, a truncated line and no line at all', () => {
   const empty = {
     installed: false, docker: '', pid: 0, frozen: false,
-    cores: 0, ram: '', web: 0, cid: '', started: 0
+    cores: 0, ram: '', web: 0, cid: '', started: 0, disk: '', login: ''
   }
   for (const bad of ['', '\n', 'bash: line 12: /proc: no such file', 'installed=1 docker=active',
     // A line from a phase 1-3 helper: no started= key, so not a sample.
@@ -162,7 +170,7 @@ test('detail prefers the live sample, falls back to the cache, else empty', () =
 // The panel's buttons, state by state. Everything not listed is disabled.
 const EXPECTED = {
   'not-installed': ['install'],
-  'stopped': ['start', 'shared'],
+  'stopped': ['start', 'shared', 'tune'],
   'starting': ['shared'],
   'booting': ['stop', 'web', 'shared'],
   'ready': ['connect', 'stop', 'pause', 'web', 'shared'],
@@ -296,10 +304,10 @@ test('cacheFrom writes a running sample and leaves a stopped one alone', () => {
   const running = State.parseSample(RUNNING)
   const stopped = State.parseSample(STOPPED)
   assert.deepEqual(State.cacheFrom(running, null, NOW),
-    { cores: 4, ram: '16G', started: STARTED, lastSeen: NOW })
+    { cores: 4, ram: '16G', disk: '', started: STARTED, lastSeen: NOW })
   // No pid: the previous cache comes back untouched, object and all, so a
   // stopped VM keeps its shape and its "Last run".
-  const previous = { cores: 4, ram: '16G', started: STARTED, lastSeen: NOW }
+  const previous = { cores: 4, ram: '16G', disk: '64G', started: STARTED, lastSeen: NOW }
   assert.equal(State.cacheFrom(stopped, previous, NOW + 60000), previous)
   assert.equal(State.cacheFrom(stopped, null, NOW), null)
   assert.equal(State.cacheFrom(null, previous, NOW), previous)
@@ -308,7 +316,7 @@ test('cacheFrom writes a running sample and leaves a stopped one alone', () => {
   // A running sample that somehow lost its shape keeps the cached one.
   const shapeless = State.parseSample(RUNNING.replace('cores=4', 'cores=').replace('ram=16G', 'ram='))
   assert.deepEqual(State.cacheFrom(shapeless, previous, NOW),
-    { cores: 4, ram: '16G', started: STARTED, lastSeen: NOW })
+    { cores: 4, ram: '16G', disk: '64G', started: STARTED, lastSeen: NOW })
 })
 
 test('the cache round-trips through JSON, which is how it is stored', () => {
@@ -317,4 +325,89 @@ test('the cache round-trips through JSON, which is how it is stored', () => {
   assert.deepEqual(read, written)
   assert.equal(State.detail(State.parseSample(STOPPED), read), '4 cores · 16G')
   assert.equal(State.lastRun(read, NOW), State.lastRun(written, NOW))
+})
+
+// --------------------------------------------------------------- 0.2.0 shape
+
+test('parseSample reads disk and login, and only the shapes the writer takes', () => {
+  const full = State.parseSample(RUNNING_FULL)
+  assert.equal(full.disk, '64G')
+  assert.equal(full.login, 'chaves')
+
+  // (a space cannot reach this parser: the fields are space separated, and the
+  // sampler validates the username before printing it)
+  const bad = over => State.parseSample(RUNNING + ' disk=' + over.disk + ' login=' + over.login)
+  assert.deepEqual(
+    [bad({ disk: '64', login: 'chaves' }).disk, bad({ disk: '64G', login: 'na/me' }).login],
+    ['', ''])
+  assert.equal(bad({ disk: '12345G', login: 'x' }).disk, '', 'four digits at most, as valid_disk')
+  assert.equal(bad({ disk: '64G', login: 'x'.repeat(21) }).login, '', 'twenty chars at most')
+  assert.equal(bad({ disk: '64G', login: 'a-b_C9' }).login, 'a-b_C9')
+})
+
+test('the pill grows a third term, and only when the disk is known', () => {
+  assert.equal(State.detail(State.parseSample(RUNNING_FULL), null), '4 cores · 16G · 64G')
+  // Off, with everything from the cache.
+  assert.equal(State.detail(State.parseSample(STOPPED), { cores: 4, ram: '16G', disk: '64G' }),
+    '4 cores · 16G · 64G')
+  // The live disk reading wins over a stale cached one: data.img is readable
+  // whether or not the VM runs.
+  assert.equal(State.detail(State.parseSample(STOPPED_FULL), { cores: 4, ram: '16G', disk: '32G' }),
+    '4 cores · 16G · 64G')
+  assert.equal(State.shape(1, '4G', ''), '1 core · 4G')
+  assert.equal(State.shape(0, '4G', '64G'), '')
+})
+
+test('a pending shape is what a stopped card shows, and a running one forgets', () => {
+  const stopped = State.parseSample(STOPPED_FULL)
+  const running = State.parseSample(RUNNING_FULL)
+  const cached = { cores: 4, ram: '16G', disk: '64G', started: STARTED, lastSeen: NOW,
+    pending: { cores: 6, ram: '16G', disk: '96G' } }
+
+  assert.equal(State.showsPending(stopped, cached), true)
+  assert.equal(State.detail(stopped, cached), '6 cores · 16G · 96G')
+  assert.equal(State.tooltip('stopped', stopped, NONE, cached, NOW),
+    'Windows VM · STOPPED · next start 6 cores · 16G · 96G')
+
+  // QEMU is up: the write has been consumed, so the live shape is the shape.
+  assert.equal(State.showsPending(running, cached), false)
+  assert.equal(State.detail(running, cached), '4 cores · 16G · 64G')
+
+  // And a pending that does not fit the writer's own spellings is not shown.
+  for (const junk of [{}, { cores: 0, ram: '16G' }, { cores: 6, ram: '16 GB' }]) {
+    assert.equal(State.pendingShape({ pending: junk }), null, JSON.stringify(junk))
+  }
+  assert.equal(State.pendingShape({ pending: { cores: 6, ram: '16G', disk: 'big' } }).disk, '',
+    'a bad disk drops the term, not the whole shape')
+})
+
+test('cachePending keeps the cache and adds the shape the next start will use', () => {
+  const previous = { cores: 4, ram: '16G', disk: '64G', started: STARTED, lastSeen: NOW }
+  const next = State.cachePending(previous, { cores: 6, ram: '16G', disk: '96G' })
+  assert.deepEqual(next, {
+    cores: 4, ram: '16G', disk: '64G', started: STARTED, lastSeen: NOW,
+    pending: { cores: 6, ram: '16G', disk: '96G' }
+  })
+  // It survives the JSON round trip the cache file is stored through...
+  assert.deepEqual(JSON.parse(JSON.stringify(next)), next)
+  // ...and the next running sample drops it, which is what clears the banner.
+  assert.equal(State.cacheFrom(State.parseSample(RUNNING_FULL), next, NOW).pending, undefined)
+  // With nothing cached yet it is still a whole cache object.
+  assert.deepEqual(State.cachePending(null, { cores: 2, ram: '4G', disk: '32G' }), {
+    cores: 0, ram: '', disk: '', started: 0, lastSeen: 0,
+    pending: { cores: 2, ram: '4G', disk: '32G' }
+  })
+})
+
+test('cacheFrom records the disk the sampler saw', () => {
+  assert.equal(State.cacheFrom(State.parseSample(RUNNING_FULL), null, NOW).disk, '64G')
+  // A sampler that reported none keeps whatever was cached.
+  assert.equal(State.cacheFrom(State.parseSample(RUNNING), { disk: '64G' }, NOW).disk, '64G')
+})
+
+test('dateText is the Settings caption, spelled out by hand', () => {
+  assert.equal(State.dateText(Date.parse('2026-09-12T10:00:00')), '12 Sep 2026')
+  assert.equal(State.dateText(Date.parse('2026-01-01T00:30:00')), '1 Jan 2026')
+  assert.equal(State.dateText(0), '')
+  assert.equal(State.dateText(null), '')
 })
