@@ -328,6 +328,17 @@ Panel {
       else service.fail(text)
       return service.state + " " + service.failedMessage
     }
+    // Debug only: show one of the card's faces — live, tune, login,
+    // updatePassword or settings — without pressing through to it, the way
+    // `mock` reaches every state. It goes through the same openFace() the
+    // buttons use, so the face is seeded the way a press would seed it; the
+    // two faces that rewrite the compose still close themselves when the VM
+    // is not stopped, and nothing runs. Anything else means "live".
+    function face(name: string): string {
+      var faces = ["live", "tune", "login", "updatePassword", "settings"]
+      root.openFace(faces.indexOf(String(name)) >= 0 ? String(name) : "live")
+      return root.face
+    }
   }
 
   // ---------------------------------------------------------- the bar glyph
