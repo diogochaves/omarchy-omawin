@@ -91,19 +91,24 @@ Panel {
   // Stepped, not tweened: Qt Quick re-renders the whole bar window for any
   // dirty item, once per compositor frame, so a per-frame opacity tween on
   // one glyph cost ~27% of the iGPU in quickshell plus ~37% in Hyprland at
-  // 3440x1440@144 for as long as the state held; four steps a second reads
-  // as the same breath and measured within idle noise (workstation repo,
+  // 3440x1440@144 for as long as the state held; 12.5 frames a second reads
+  // as the same breath and measured at 1-3% (workstation repo,
   // docs/shell-gpu-saturation-2026-09-22.md section 17). Rule for every
   // bar animation from 2026-09-22 on: omarchy-mods README, "Animation budget".
   property real pulsePhase: 1.0
   Timer {
+    id: pulseTimer
     running: root.pulsing
-    interval: 400
+    // 12.5 frames a second: the same 1.6 s sine breath, sampled coarsely
+    // enough to cost about a tenth of a per-frame tween.
+    interval: 80
     repeat: true
     triggeredOnStart: true
     property int step: 0
-    readonly property var phases: [1.0, 0.7, 0.45, 0.7]
-    onTriggered: { root.pulsePhase = phases[step]; step = (step + 1) % phases.length }
+    onTriggered: {
+      root.pulsePhase = 0.725 + 0.275 * Math.cos(2 * Math.PI * step / 20)
+      step = (step + 1) % 20
+    }
     onRunningChanged: if (!running) { step = 0; root.pulsePhase = 1.0 }
   }
 
