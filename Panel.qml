@@ -87,12 +87,24 @@ Panel {
   // Pulse while the VM is on its way up or down. Kept on its own property
   // rather than on the button's opacity, which WidgetButton already animates
   // with a 140 ms Behavior that would fight this one.
+  //
+  // Stepped, not tweened: Qt Quick re-renders the whole bar window for any
+  // dirty item, once per compositor frame, so a per-frame opacity tween on
+  // one glyph cost ~27% of the iGPU in quickshell plus ~37% in Hyprland at
+  // 3440x1440@144 for as long as the state held; four steps a second reads
+  // as the same breath and measured within idle noise (workstation repo,
+  // docs/shell-gpu-saturation-2026-09-22.md section 17). Rule for every
+  // bar animation from 2026-09-22 on: omarchy-mods README, "Animation budget".
   property real pulsePhase: 1.0
-  SequentialAnimation on pulsePhase {
+  Timer {
     running: root.pulsing
-    loops: Animation.Infinite
-    NumberAnimation { from: 1.0; to: 0.45; duration: 800; easing.type: Easing.InOutSine }
-    NumberAnimation { from: 0.45; to: 1.0; duration: 800; easing.type: Easing.InOutSine }
+    interval: 400
+    repeat: true
+    triggeredOnStart: true
+    property int step: 0
+    readonly property var phases: [1.0, 0.7, 0.45, 0.7]
+    onTriggered: { root.pulsePhase = phases[step]; step = (step + 1) % phases.length }
+    onRunningChanged: if (!running) { step = 0; root.pulsePhase = 1.0 }
   }
 
   // Nerd Font stand-ins for the mockup's inline SVGs.
