@@ -240,7 +240,8 @@ QtObject {
           lastSeen: Number.isInteger(lastSeen) && lastSeen > 0 && lastSeen < horizon ? lastSeen : 0,
           // State.pendingShape does the checking: a pending shape that does not
           // fit the writer's own spellings is dropped, not printed.
-          pending: State.pendingShape(parsed)
+          pending: State.pendingShape(parsed),
+          grew: State.grewShape(parsed.grew)
         }
       }
     }
@@ -263,8 +264,22 @@ QtObject {
       // A `pending` that has just been consumed by a start has to reach the
       // file at once: it is what the pill and the banner are reading.
       || (!!previous.pending !== !!next.pending)
+      // So does a grow, or the banner would come back after a shell restart.
+      || JSON.stringify(previous.grew || null) !== JSON.stringify(next.grew || null)
     if (!shapeMoved && now - root.cacheWrittenAt < 60000) return
     root.cacheWrittenAt = now
+    cacheFile.setText(JSON.stringify(next, null, 2) + "\n")
+  }
+
+  // The running card's "extend C:" banner after a disk grow, and its ×.
+  readonly property string grewNote: State.grewNote(root.sample, root.cached)
+
+  function dismissGrew() {
+    var next = State.dismissGrew(root.cached)
+    if (next === root.cached) return
+    root.cached = next
+    if (!root.cacheLoaded) return
+    root.cacheWrittenAt = Date.now()
     cacheFile.setText(JSON.stringify(next, null, 2) + "\n")
   }
 

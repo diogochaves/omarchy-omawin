@@ -442,3 +442,39 @@ test('dateText is the Settings caption, spelled out by hand', () => {
   assert.equal(State.dateText(0), '')
   assert.equal(State.dateText(null), '')
 })
+
+test('a start that grew the disk is recorded, kept for that run and dropped after', () => {
+  const grown = State.parseSample(RUNNING + ' disk=96G login=chaves')
+  assert.equal(grown.disk, '96G')
+  const before = { cores: 4, ram: '16G', disk: '64G', started: STARTED - 3600, lastSeen: NOW - 86400000 }
+  const first = State.cacheFrom(grown, before, NOW)
+  assert.deepEqual(first.grew, { from: '64G', to: '96G' })
+  assert.match(State.grewNote(grown, first), /grew from 64G to 96G.*Extend Volume/)
+
+  // The next sample of the same run keeps it, and a dismissal sticks.
+  const second = State.cacheFrom(grown, first, NOW + 5000)
+  assert.deepEqual(second.grew, first.grew)
+  const dismissed = State.dismissGrew(second)
+  assert.equal(State.grewNote(grown, dismissed), '')
+  assert.equal(State.cacheFrom(grown, dismissed, NOW + 10000).grew.dismissed, true)
+  assert.equal(State.dismissGrew(dismissed), dismissed)
+
+  // A stopped card never shows it; the next run, same size, drops it.
+  assert.equal(State.grewNote(State.parseSample(STOPPED), first), '')
+  const nextRun = State.parseSample((RUNNING + ' disk=96G login=chaves')
+    .replace('started=' + STARTED, 'started=' + (STARTED + 7200)))
+  assert.equal(State.cacheFrom(nextRun, second, NOW + 86400000).grew, undefined)
+
+  // Same size, or no size known before: nothing to say.
+  assert.equal(State.cacheFrom(grown, { ...before, disk: '96G' }, NOW).grew, undefined)
+  assert.equal(State.cacheFrom(grown, null, NOW).grew, undefined)
+})
+
+test('grewShape believes only a real grow in the writer\'s spelling', () => {
+  assert.deepEqual(State.grewShape({ from: '64G', to: '96G' }), { from: '64G', to: '96G' })
+  assert.deepEqual(State.grewShape({ from: '64G', to: '96G', dismissed: true }),
+    { from: '64G', to: '96G', dismissed: true })
+  for (const bad of [null, 'x', {}, { from: '96G', to: '64G' }, { from: '64G', to: '64G' },
+    { from: '64 G', to: '96G' }, { from: '64G', to: '<b>96G</b>' }])
+    assert.equal(State.grewShape(bad), null, JSON.stringify(bad))
+})

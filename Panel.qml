@@ -133,6 +133,7 @@ Panel {
   readonly property string shieldGlyph: ""
   readonly property string checkGlyph: ""
   readonly property string backGlyph: ""
+  readonly property string closeGlyph: ""
   readonly property string minusGlyph: ""
   readonly property string plusGlyph: ""
 
@@ -739,6 +740,16 @@ Panel {
           visible: service.noticeText !== "" && root.face !== "settings"
           text: service.noticeText
           accentColor: service.noticeOk ? Color.accent : root.urgentColor
+        }
+
+        // After a start that grew the disk: Windows leaves the new space
+        // unallocated, and this is the moment it matters. Until × or a stop.
+        BannerBox {
+          visible: service.grewNote !== "" && root.live
+          text: service.grewNote
+          accentColor: Color.accent
+          dismissible: true
+          onDismissed: service.dismissGrew()
         }
 
         // ---------- Actions ----------
@@ -1522,6 +1533,9 @@ Panel {
     id: banner
     property string text: ""
     property color accentColor: root.fg
+    // A × at the right, for a banner that stays until it is put away.
+    property bool dismissible: false
+    signal dismissed()
 
     width: parent.width
     implicitHeight: bannerText.implicitHeight + Style.space(12)
@@ -1543,7 +1557,7 @@ Panel {
       id: bannerText
       anchors.left: parent.left
       anchors.leftMargin: Style.space(10)
-      anchors.right: parent.right
+      anchors.right: banner.dismissible ? bannerClose.left : parent.right
       anchors.rightMargin: Style.space(10)
       anchors.verticalCenter: parent.verticalCenter
       textFormat: Text.PlainText
@@ -1552,6 +1566,26 @@ Panel {
       color: root.fg
       font.family: root.family
       font.pixelSize: Style.font.caption
+    }
+
+    // The same square, borderless-at-rest control as Back, top right.
+    Button {
+      id: bannerClose
+      visible: banner.dismissible
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(4)
+      anchors.top: parent.top
+      anchors.topMargin: Style.space(4)
+      iconText: root.closeGlyph
+      iconSize: Style.font.caption
+      fontSize: Style.font.caption
+      verticalPadding: Style.space(4)
+      horizontalPadding: Style.space(4)
+      foreground: root.fg
+      fontFamily: root.family
+      tooltipText: "Dismiss"
+      implicitWidth: implicitHeight
+      onClicked: banner.dismissed()
     }
   }
 

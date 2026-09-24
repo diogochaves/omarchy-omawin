@@ -28,6 +28,10 @@ chaves.omawin` brings you the latest.
 
 ### Changed
 
+- **After a start that grew the disk, the running card tells you how to use
+  the new space.** Windows keeps C: at its old size until you extend it in
+  Disk Management; before, the only mention was on Tune, before the start. The
+  note stays until you dismiss it with × or stop the VM.
 - **Every card now has a Login… button**, last in its bottom row, so the RDP
   username and password are one click away in every state, including while
   the VM boots and the web viewer asks for them. Before, the only ways in were
