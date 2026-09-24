@@ -5,6 +5,15 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Fixed
+
+- **Copy password no longer saves the password in Omarchy's clipboard
+  history.** It is now marked as sensitive, so the history skips it. If you
+  used Copy before this update, open the clipboard history and delete that
+  entry. It is kept in `~/.local/state/omarchy/clipboard-history.json`.
+- The clear 30 s after Copy no longer erases something you copied in the
+  meantime: it only clears the clipboard if the password is still on it.
+
 ### Changed
 
 - The bar glyph's pulse, while the VM starts or stops, now costs a fraction of

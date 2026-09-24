@@ -140,7 +140,9 @@ authorisation. The VM has to be off; the new shape is used by the next Start.
 
 The RDP username and password Omarchy stored at install, for when the RDP
 client or the web viewer asks. **Reveal** shows the password for 15 seconds,
-**Copy** puts it on the clipboard for 30. Changed the password *inside*
+**Copy** puts it on the clipboard for 30, marked sensitive so Omarchy's
+clipboard history skips it, and clears it afterwards unless you have copied
+something else since. Changed the password *inside*
 Windows? **Update password…** writes the new one down so Connect keeps working
 (VM off, one authorisation).
 
@@ -184,8 +186,9 @@ see [Polkit rule](#polkit-rule) for what it says and why.
   `systemctl --user stop omawin-launch`, and `xdg-open` on
   `http://127.0.0.1:8006` and `~/Windows`. Tune and Update password add
   `/usr/bin/pkexec /usr/bin/omarchy-windows-vm __priv write_compose` with the
-  six `KEY=VALUE` lines on **stdin**; Copy password adds `/usr/bin/wl-copy`
-  (and `wl-copy --clear` 30 s later); the Settings switch adds
+  six `KEY=VALUE` lines on **stdin**; Copy password adds `/usr/bin/wl-copy --sensitive`
+  (and, 30 s later, `wl-paste` plus `wl-copy --clear` if the clipboard still
+  holds the password); the Settings switch adds
   `sudo <plugin dir>/setup polkit [--remove]` in Omarchy's floating terminal.
   Every command is a constant with an absolute path; nothing is built from
   data, and no password is ever an argument — `/proc/<pid>/cmdline` is

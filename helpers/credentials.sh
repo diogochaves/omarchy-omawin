@@ -109,16 +109,29 @@ print_password() {
 
 # wl-copy forks a tiny server to own the selection and returns at once. --type
 # keeps the clipboard manager from guessing, and the password goes in on stdin.
+# --sensitive offers the x-kde-passwordManagerHint type beside it, which is what
+# Omarchy's clipboard history (shell/plugins/clipboard/capture.sh) skips on:
+# without it the password would be written to
+# ~/.local/state/omarchy/clipboard-history.json and outlive the 30 s clear.
 copy_password() {
   local value
   value=$(credential PASSWORD) || die "$missing"
   [[ $value =~ ^[[:print:]]{1,64}$ ]] ||
     die "the stored password is not a single printable line"
-  printf '%s' "$value" | /usr/bin/wl-copy --type text/plain ||
+  printf '%s' "$value" | /usr/bin/wl-copy --sensitive --type text/plain ||
     die "could not reach the clipboard (wl-copy)"
 }
 
+# `wl-copy --clear` empties the clipboard whoever owns it, so it only runs while
+# the clipboard still holds the password: whatever the user copied since is
+# theirs and stays. The comparison happens here, with both values in this
+# process only; nothing is printed.
 clear_clipboard() {
+  local value current
+  value=$(credential PASSWORD) || return 0
+  current=$(/usr/bin/timeout 2 /usr/bin/wl-paste --no-newline --type text/plain 2>/dev/null) ||
+    return 0
+  [[ $current == "$value" ]] || return 0
   /usr/bin/wl-copy --clear || die "could not reach the clipboard (wl-copy)"
 }
 

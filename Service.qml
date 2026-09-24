@@ -920,9 +920,10 @@ QtObject {
     }
   }
 
-  // The clipboard is cleared 30 s later rather than left holding the password
-  // for whatever manager is watching it. A plain timed clear: if something else
-  // has taken the selection since, `wl-copy --clear` only drops ours.
+  // The clipboard is cleared 30 s later rather than left holding the password.
+  // The helper only clears it if it still holds the password: anything the
+  // user copied since is left alone. Clipboard history never saw it, because
+  // Copy marks it sensitive.
   property Timer clipboardTimer: Timer {
     interval: 30000
     repeat: false
