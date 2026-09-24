@@ -11,7 +11,10 @@ the polkit rule and its `setup`. The README is the user-facing reference; read i
 ignores tags and GitHub releases. **Anything pushed to `main` ships to every user
 on their next update.** So:
 
-- Work happens on a branch (`fixes-X.Y.Z`, `feature-…`), never directly on `main`.
+- One branch per release (`fixes-X.Y.Z`), cut from `main`; never commit to `main`
+  directly. Each fix is its own commit on it.
+- Test each fix as it lands, then the whole branch together. `main` only
+  fast-forwards to a branch tip that was tested as a whole.
 - Never push, merge to `main`, tag or publish a release until the tests pass and
   Diogo has tested the exact candidate (in an omabox and on his own bar) and
   approved it.
