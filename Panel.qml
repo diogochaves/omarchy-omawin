@@ -613,26 +613,13 @@ Panel {
               note: service.diskNote
               dimValue: service.diskText === "—"
             }
-            // The Login line is also a way in: the mockup reaches the Login
-            // face from here as well as from Settings.
-            Item {
+            // Plain information: the way into the Login face is the Login…
+            // button in the bottom row, on every card.
+            InfoPair {
               visible: root.vmState === "stopped"
-              width: parent.width
-              implicitHeight: loginPair.implicitHeight
-
-              InfoPair {
-                id: loginPair
-                label: "Login"
-                value: service.loginText
-                dimValue: true
-              }
-
-              MouseArea {
-                anchors.fill: parent
-                enabled: service.loginText !== "—"
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.openFace("login")
-              }
+              label: "Login"
+              value: service.loginText
+              dimValue: true
             }
             InfoPair {
               visible: root.vmState === "booting"
@@ -747,7 +734,7 @@ Panel {
           ActionRow {
             id: stoppedRow
             visible: root.stateFace === "stopped"
-            cells: 3
+            cells: 2
             ActionButton {
               width: stoppedRow.cellWidth
               iconText: root.playGlyph
@@ -762,13 +749,20 @@ Panel {
               allowed: root.can("tune")
               onClicked: root.openFace("tune")
             }
+          }
+
+          ActionRow {
+            id: stoppedRow2
+            visible: stoppedRow.visible
+            cells: 2
             ActionButton {
-              width: stoppedRow.cellWidth
+              width: stoppedRow2.cellWidth
               iconText: root.folderGlyph
               text: "Shared folder"
               allowed: root.can("shared")
               onClicked: service.openShared()
             }
+            LoginButton { width: stoppedRow2.cellWidth }
           }
 
           // starting / stopping — everything but the folder is dead
@@ -795,7 +789,7 @@ Panel {
           ActionRow {
             id: transientRow2
             visible: transientRow.visible
-            cells: 1
+            cells: 2
             ActionButton {
               width: transientRow2.cellWidth
               iconText: root.folderGlyph
@@ -803,6 +797,7 @@ Panel {
               allowed: root.can("shared")
               onClicked: service.openShared()
             }
+            LoginButton { width: transientRow2.cellWidth }
           }
 
           // booting
@@ -826,7 +821,7 @@ Panel {
             }
           }
 
-          // ready — the only three-button row in the kit
+          // ready: Connect, Pause and Stop; its second row is shared with booting
           ActionRow {
             id: readyRow
             visible: root.stateFace === "ready"
@@ -878,7 +873,7 @@ Panel {
           ActionRow {
             id: pausedRow2
             visible: pausedRow.visible
-            cells: 1
+            cells: 2
             ActionButton {
               width: pausedRow2.cellWidth
               iconText: root.folderGlyph
@@ -886,13 +881,14 @@ Panel {
               allowed: root.can("shared")
               onClicked: service.openShared()
             }
+            LoginButton { width: pausedRow2.cellWidth }
           }
 
           // booting and ready share the second row
           ActionRow {
             id: liveRow2
             visible: bootingRow.visible || readyRow.visible
-            cells: 2
+            cells: 3
             ActionButton {
               width: liveRow2.cellWidth
               iconText: root.globeGlyph
@@ -907,6 +903,7 @@ Panel {
               allowed: root.can("shared")
               onClicked: service.openShared()
             }
+            LoginButton { width: liveRow2.cellWidth }
           }
         }
 
@@ -1404,8 +1401,19 @@ Panel {
     }
   }
 
+  // The way into the Login face, always the last button of a card's bottom
+  // row: the web viewer asks for this login while the VM boots or runs, so it
+  // has to be reachable from every state, not only the stopped one. It only
+  // opens a face and reads a file the user owns, so `busy` does not grey it.
+  component LoginButton: ActionButton {
+    iconText: root.keyGlyph
+    text: "Login…"
+    allowed: service.loginText !== "—"
+    onClicked: root.openFace("login")
+  }
+
   // A row of equal-width buttons, the Display panel's scale-pill geometry.
-  // Never more than two cells except on the ready card.
+  // Three cells on the ready and booting cards, two everywhere else.
   component ActionRow: Row {
     property int cells: 1
     readonly property real cellWidth: cells > 0 ? (width - spacing * (cells - 1)) / cells : 0

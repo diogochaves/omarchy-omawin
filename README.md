@@ -106,22 +106,23 @@ the VM is off, Connect when it is up.
 
 One face per state, with only the buttons that make sense there:
 
-- **Stopped** — Start, Tune…, Shared folder, and the shape the next start will
-  use.
+- **Stopped** — Start, Tune…, and the shape the next start will use.
 - **Starting** — the container is coming up; Omarchy may ask for
   authorisation.
 - **Booting** — QEMU is up and the card waits for Windows to answer on RDP.
   The web viewer already works here, which is where you watch a first install.
 - **Ready** — Connect opens the RDP window (Omarchy's own launcher, in a user
-  unit, so it survives a bar reload). Pause, Stop, Web viewer, Shared folder.
+  unit, so it survives a bar reload). Pause, Stop, Web viewer.
 - **Paused** — frozen in memory, using no CPU. Resume picks up where it left
   off and reopens the window. Stop unpauses first, so Windows shuts down
   cleanly.
 - **Failed** — what went wrong, in the widget's words, and the launch log
   behind it. The next successful action clears it.
 
-*Web viewer* opens `http://127.0.0.1:8006`, the VM's console in the browser;
-*Shared folder* opens `~/Windows`, which the guest sees as a network drive.
+Every card ends with **Shared folder** and **Login…**: *Shared folder* opens
+`~/Windows`, which the guest sees as a network drive, and *Login…* opens the
+[Login](#login) face. *Web viewer* opens `http://127.0.0.1:8006`, the VM's
+console in the browser, which asks for that login.
 
 ### Tune
 

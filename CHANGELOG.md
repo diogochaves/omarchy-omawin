@@ -16,6 +16,11 @@ chaves.omawin` brings you the latest.
 
 ### Changed
 
+- **Every card now has a Login… button**, last in its bottom row, so the RDP
+  username and password are one click away in every state, including while
+  the VM boots and the web viewer asks for them. Before, the only ways in were
+  the Login line of the stopped card, which did not look clickable, and
+  Settings. Shared folder moved to that bottom row too.
 - The bar glyph's pulse, while the VM starts or stops, now costs a fraction of
   the GPU it used to: the same breath, drawn at 12.5 frames a second instead of
   every monitor refresh.
