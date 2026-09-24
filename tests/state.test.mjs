@@ -28,7 +28,7 @@ test('parseSample reads a running line', () => {
   assert.deepEqual(State.parseSample(RUNNING), {
     installed: true, docker: 'active', pid: 1360395, frozen: false,
     cores: 4, ram: '16G', web: 401, cid: CID, started: STARTED,
-    // Not on the phase 1-4 lines these constants are: an older sampler's line
+    // Not on the pre-0.2.0 lines these constants are: an older sampler's line
     // parses, it just carries no disk and no login.
     disk: '', login: ''
   })
@@ -54,7 +54,7 @@ test('parseSample survives garbage, a truncated line and no line at all', () => 
     cores: 0, ram: '', web: 0, cid: '', started: 0, disk: '', login: ''
   }
   for (const bad of ['', '\n', 'bash: line 12: /proc: no such file', 'installed=1 docker=active',
-    // A line from a phase 1-3 helper: no started= key, so not a sample.
+    // A line from a helper that predates started=: not a sample.
     'installed=1 docker=active pid= frozen= cores= ram= web=000 cid=',
     undefined, null, 42]) {
     assert.deepEqual(State.parseSample(bad), empty, JSON.stringify(bad))

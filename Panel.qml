@@ -9,13 +9,13 @@ import "lib/State.js" as State
 // button calls a Service method, and no Process is started from this file.
 // Service.qml next door owns the samplers, the timers and the actions.
 //
-// The card is the one in plans/omawin-mockup.html, eight faces of the same
-// column: hero, an indeterminate progress bar while a transient is pending, a
-// caption line or two columns of info pairs depending on the state, the
-// failure block, and one or two rows of equal-width buttons. Which of those
-// are visible is the only thing that changes between states — the layout,
-// the paddings and the type sizes are the shell's own tokens throughout, so
-// the card re-skins with the theme exactly like the first-party panels.
+// The card is eight faces of the same column: hero, an indeterminate progress
+// bar while a transient is pending, a caption line or two columns of info
+// pairs depending on the state, the failure block, and one or two rows of
+// equal-width buttons. Which of those are visible is the only thing that
+// changes between states — the layout, the paddings and the type sizes are the
+// shell's own tokens throughout, so the card re-skins with the theme exactly
+// like the first-party panels.
 //
 // On top of those eight states there are four sub-faces, `face`: Tune (the
 // VM's shape), Login (the stored RDP credentials), Update password and
@@ -92,9 +92,7 @@ Panel {
   // dirty item, once per compositor frame, so a per-frame opacity tween on
   // one glyph cost ~27% of the iGPU in quickshell plus ~37% in Hyprland at
   // 3440x1440@144 for as long as the state held; 12.5 frames a second reads
-  // as the same breath and measured at 1-3% (workstation repo,
-  // docs/shell-gpu-saturation-2026-09-22.md section 17). Rule for every
-  // bar animation from 2026-09-22 on: omarchy-mods README, "Animation budget".
+  // as the same breath and measured at 1-3%.
   property real pulsePhase: 1.0
   Timer {
     id: pulseTimer

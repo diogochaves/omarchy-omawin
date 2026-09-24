@@ -606,7 +606,7 @@ QtObject {
   // Short and non-interactive, so it runs as a plain Process with its stderr
   // collected; `omarchy-windows-vm stop` does one `pkexec … __priv down`.
 
-  // Open question 3: `docker compose down` on a frozen container sends
+  // `docker compose down` on a frozen container sends
   // SIGTERM into a process that cannot answer, waits out the full 2 min grace
   // period and then SIGKILLs it — an unclean Windows shutdown. So a paused VM
   // is unpaused first and only stopped once that worked; a failed unpause

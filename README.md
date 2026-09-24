@@ -71,11 +71,6 @@ omarchy plugin update chaves.omawin
 omarchy plugin remove chaves.omawin
 ```
 
-
-```sh
-omarchy plugin remove chaves.omawin
-```
-
 What can stay behind, and how to take it out:
 
 | Artifact | After removal | To remove it |
