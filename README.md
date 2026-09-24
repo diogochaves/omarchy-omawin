@@ -124,6 +124,10 @@ Every card ends with **Shared folder** and **Login…**: *Shared folder* opens
 [Login](#login) face. *Web viewer* opens `http://127.0.0.1:8006`, the VM's
 console in the browser, which asks for that login.
 
+Tune, Login and Settings open over the card. The **‹** at the top left of
+each goes back one step, and so does **Esc**; Esc closes the card only from
+the card itself.
+
 ### Tune
 
 <p><img src="docs/face-tune.png" alt="The Tune face: cores, RAM and disk chips, with the host's limits" width="443"></p>

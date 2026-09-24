@@ -20,7 +20,7 @@ import "lib/State.js" as State
 // On top of those eight states there are four sub-faces, `face`: Tune (the
 // VM's shape), Login (the stored RDP credentials), Update password and
 // Settings (the optional polkit rule). Each replaces the body of the same card
-// and comes back with Back; the gear in the hero opens Settings from anywhere.
+// and comes back with the ‹ at the top left (or Esc); the gear in the hero opens Settings from anywhere.
 // The state machine keeps running underneath, so Tune and Update password —
 // the two that rewrite the compose, which is only read at the next start —
 // close themselves the moment the VM stops being stopped.
@@ -148,14 +148,24 @@ Panel {
     }
   }
 
-  readonly property Component glyphHero: Component {
-    Text {
-      textFormat: Text.PlainText
-      text: root.face === "tune" ? root.tuneGlyph
-        : root.face === "settings" ? root.gearGlyph : root.keyGlyph
-      color: root.dim
-      font.family: root.family
-      font.pixelSize: Style.font.display
+  // On a sub-face that slot is Back: top left, where apps put it, and the
+  // one way out of every sub-face (Esc does the same, see goBack()).
+  readonly property Component backHero: Component {
+    Button {
+      bordered: true
+      iconText: root.backGlyph
+      iconSize: Style.font.bodySmall
+      fontSize: Style.font.caption
+      verticalPadding: Style.spacing.controlPaddingY
+      horizontalPadding: Style.spacing.sm
+      foreground: root.fg
+      fontFamily: root.family
+      tooltipText: "Back · Esc"
+      // Square: as wide as it is tall, the chevron centred by the kit's row.
+      implicitWidth: implicitHeight
+      enabled: !service.busy
+      opacity: enabled ? 1.0 : 0.45
+      onClicked: root.goBack()
     }
   }
 
@@ -256,7 +266,22 @@ Panel {
   readonly property bool canSave: !service.busy && root.stoppedFace
     && service.canSavePassword && newPassword.text !== "" && newPassword.text.length <= 64
 
+  // Where Back leads from the Login face: the card, or Settings when Login
+  // was opened from its "view →" line.
+  property string loginFrom: "live"
+
+  // One step back: Update password to Login, Login to wherever it was opened
+  // from, every other sub-face to the card. On the card itself it closes it.
+  function goBack() {
+    if (root.face === "live") root.close()
+    else if (root.face === "updatePassword") root.openFace("login")
+    else if (root.face === "login") root.openFace(root.loginFrom)
+    else root.openFace("live")
+  }
+
   function openFace(name) {
+    if (name === "login" && root.face !== "updatePassword")
+      root.loginFrom = root.face === "settings" ? "settings" : "live"
     if (name === "tune") {
       service.clearNotice()
       service.readLimits()
@@ -418,7 +443,9 @@ Panel {
       // handler takes keys BEFORE any descendant, so without `blocked` every
       // character typed into the password field would be eaten as a shortcut.
       blocked: newPassword.activeFocus
-      onCloseRequested: root.close()
+      // Esc goes back one step on a sub-face and closes only from the card,
+      // the way the network panel's Esc cancels its prompt before anything.
+      onCloseRequested: root.goBack()
       onTabRequested: function (direction) { root.switchPanel(direction) }
 
       Column {
@@ -453,7 +480,7 @@ Panel {
           foreground: root.failed && root.live ? root.urgentColor : root.fg
           fontFamily: root.family
           iconOpacity: root.vmState === "not-installed" && root.live ? 0.45 : 1.0
-          iconComponent: root.live ? winHero : glyphHero
+          iconComponent: root.live ? winHero : backHero
           trailingControl: Component {
             Button {
               visible: root.live
@@ -1024,20 +1051,13 @@ Panel {
 
           ActionRow {
             id: tuneRow
-            cells: 2
+            cells: 1
             ActionButton {
               width: tuneRow.cellWidth
               iconText: root.checkGlyph
               text: "Apply…"
               allowed: root.canApply
               onClicked: service.applyShape(root.tuneCores, root.tuneRam, root.tuneDisk)
-            }
-            ActionButton {
-              width: tuneRow.cellWidth
-              iconText: root.backGlyph
-              text: "Back"
-              allowed: !service.busy
-              onClicked: root.openFace("live")
             }
           }
         }
@@ -1105,20 +1125,13 @@ Panel {
 
           ActionRow {
             id: loginRow2
-            cells: 2
+            cells: 1
             ActionButton {
               width: loginRow2.cellWidth
               iconText: root.keyGlyph
               text: "Update password…"
               allowed: !service.busy && root.stoppedFace
               onClicked: root.openFace("updatePassword")
-            }
-            ActionButton {
-              width: loginRow2.cellWidth
-              iconText: root.backGlyph
-              text: "Back"
-              allowed: !service.busy
-              onClicked: root.openFace("live")
             }
           }
         }
@@ -1162,6 +1175,9 @@ Panel {
                 font.family: root.family
                 font.pixelSize: Style.font.caption
                 onAccepted: if (root.canSave) service.savePassword(text)
+                // The field holds the keyboard, so the key catcher never sees
+                // this Esc: it has to go back from here.
+                Keys.onEscapePressed: root.goBack()
               }
 
               ActionButton {
@@ -1188,20 +1204,13 @@ Panel {
 
           ActionRow {
             id: updateRow
-            cells: 2
+            cells: 1
             ActionButton {
               width: updateRow.cellWidth
               iconText: root.checkGlyph
               text: "Save…"
               allowed: root.canSave
               onClicked: service.savePassword(newPassword.text)
-            }
-            ActionButton {
-              width: updateRow.cellWidth
-              iconText: root.backGlyph
-              text: "Cancel"
-              allowed: !service.busy
-              onClicked: root.openFace("login")
             }
           }
         }
@@ -1304,20 +1313,13 @@ Panel {
 
           ActionRow {
             id: settingsRow
-            cells: 2
+            cells: 1
             ActionButton {
               width: settingsRow.cellWidth
               iconText: root.shieldGlyph
               text: service.rulePresent ? "Remove rule…" : "Install rule…"
               allowed: !service.busy
               onClicked: { service.rulePresent ? service.removeRule() : service.installRule(); root.close() }
-            }
-            ActionButton {
-              width: settingsRow.cellWidth
-              iconText: root.backGlyph
-              text: "Back"
-              allowed: !service.busy
-              onClicked: root.openFace("live")
             }
           }
 

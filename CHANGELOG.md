@@ -21,6 +21,12 @@ chaves.omawin` brings you the latest.
   the VM boots and the web viewer asks for them. Before, the only ways in were
   the Login line of the stopped card, which did not look clickable, and
   Settings. Shared folder moved to that bottom row too.
+- **Back is now in one place on Tune, Login, Update password and Settings**: a
+  ‹ at the top left of the title, where the face's icon was. It replaces the
+  Back and Cancel buttons at the bottom, which sat in a different spot on each
+  face, next to the main action.
+- **Esc goes back one step** from Tune, Login, Update password and Settings
+  instead of closing the whole card. On the card itself it still closes it.
 - The bar glyph's pulse, while the VM starts or stops, now costs a fraction of
   the GPU it used to: the same breath, drawn at 12.5 frames a second instead of
   every monitor refresh.
