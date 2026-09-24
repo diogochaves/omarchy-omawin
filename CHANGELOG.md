@@ -30,7 +30,8 @@ chaves.omawin` brings you the latest.
 - **Cancelling Pause's password dialog now says what happened.** Pause closes
   the Windows window first; without the optional polkit rule it then asks for
   your password, and cancelling left the VM running with no window and no word
-  about it. The card now says the VM is still running and to press Connect.
+  about it. The card now warns that the VM is still running and to press
+  Connect; the warning goes away once the window is open again.
 
 ### Changed
 

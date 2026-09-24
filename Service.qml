@@ -562,6 +562,10 @@ QtObject {
   // by one is-active per sample while QEMU runs, so a session that predates
   // a bar reload (or was started from a terminal) is picked up within 5 s.
   property bool sessionOpen: false
+  // A window that has just opened answers whatever the banner still says
+  // ("Pause cancelled … press Connect"), however it was opened. The other
+  // notices belong to a stopped VM and are gone by now anyway.
+  onSessionOpenChanged: if (root.sessionOpen) root.clearNotice()
 
   property Timer unitTimer: Timer {
     interval: 2000
@@ -735,7 +739,8 @@ QtObject {
         if (root.dismissed(message)) {
           root.clearDesired()
           if (closedWindow)
-            root.notice("Pause cancelled. The VM is still running; press Connect to reopen the window.", true)
+            // The warning colour: nothing was paused, and the window is gone.
+            root.notice("Pause cancelled. The VM is still running; press Connect to reopen the window.", false)
         } else root.fail(message || "docker pause exited with status " + code)
       }
       root.refresh()
