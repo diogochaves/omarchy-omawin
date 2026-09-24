@@ -54,6 +54,8 @@
 # them to run every guard without a VM):
 #   CREDENTIALS_FILE  the VM credentials     (default ~/.config/windows/credentials)
 #   DATA_IMAGE        the guest disk image   (default ~/.windows/data.img)
+#   LEGACY_COMPOSE_FILE  the pre-move compose, only for which advice to give
+#                     (default ~/.config/windows/docker-compose.yml)
 #   WINDOWS_DIR       what `free` measures   (default ~/.windows, else ~)
 #   HOST_CORES        skip nproc, use this value
 #   HOST_RAM_GB       skip /proc/meminfo, use this value
@@ -212,6 +214,10 @@ apply() {
     die "not enough room: $disk needs $need GB free (disk + $RESERVE_GB GB), $free GB left"
 
   local username password tz
+  # An install from before Omarchy moved the compose has no credentials file
+  # until its first launch writes one; reinstalling would be the wrong advice.
+  [[ -f $credentials || ! -f ${LEGACY_COMPOSE_FILE:-$HOME/.config/windows/docker-compose.yml} ]] ||
+    die "start the VM once first: Omarchy finishes moving its settings then"
   username=$(credential USERNAME) ||
     die "no credentials at $credentials: run omarchy-windows-vm install first"
   password=$(credential PASSWORD) ||

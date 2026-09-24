@@ -29,6 +29,7 @@ function box(t, { disk = 64, credentials = 'USERNAME=chaves\nPASSWORD=secret\n' 
     env: {
       CREDENTIALS_FILE: file,
       DATA_IMAGE: image,
+      LEGACY_COMPOSE_FILE: path.join(dir, 'legacy-compose.yml'),
       WINDOWS_DIR: dir,
       HOST_CORES: '8',
       HOST_RAM_GB: '32',
@@ -178,4 +179,12 @@ test('the usage line is what an unknown subcommand gets', () => {
   const result = helper('tune.sh', ['upgrade'])
   assert.equal(result.status, 2)
   assert.match(result.err, /usage: tune\.sh limits \| tune\.sh apply/)
+})
+
+test('an install Omarchy has not moved yet is told to start once, not to reinstall', t => {
+  const { dir, env } = box(t, { credentials: null })
+  fs.writeFileSync(path.join(dir, 'legacy-compose.yml'), 'services:\n')
+  const result = apply(env, ['--cores', '4', '--ram', '8G', '--disk', '64G'], { TUNE_DRY_RUN: '1' })
+  assert.equal(result.status, 2)
+  assert.match(result.err, /start the VM once first/)
 })

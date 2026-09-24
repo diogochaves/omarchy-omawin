@@ -8,7 +8,12 @@
 #   installed=1 docker=active pid= frozen= cores= ram= web=000 cid= started= disk=64G login=chaves
 #   installed=0 docker=active pid= frozen= cores= ram= web=000 cid= started= disk= login=
 #
-#   installed  both the compose and the credentials file exist (1/0)
+#   installed  both the compose and the credentials file exist, or, on an
+#              install from before Omarchy moved the compose, the old one in
+#              ~/.config/windows does (1/0). omarchy-windows-vm treats that
+#              one as configured too: `launch`, `stop` and `remove` each move
+#              it (migrate_legacy_compose), writing the credentials file on
+#              the way, so the first Start from the card finishes the move.
 #   docker     systemctl is-active docker.service
 #   pid        the VM's QEMU pid: comm is "windows" (the compose passes
 #              -name Windows,process=windows) AND the cgroup is a docker-
@@ -30,7 +35,8 @@
 #              readable record of DISK_SIZE: the compose is root:docker 0640.
 #   login      the USERNAME line of the credentials file, nothing else. The
 #              password is never printed, never read here: the Login face asks
-#              helpers/credentials.sh for it, on demand.
+#              helpers/credentials.sh for it, on demand. On a not yet moved
+#              install, the USERNAME of the old compose instead.
 #
 # When installed=0 there is no Omarchy VM to look at, so neither the /proc
 # scan nor the web probe runs and every other key comes back empty.
@@ -43,6 +49,7 @@
 #   PROC_ROOT         procfs root            (default /proc)
 #   SYS_ROOT          sysfs root             (default /sys)
 #   COMPOSE_FILE      Omarchy's compose      (default /var/lib/omarchy/windows/docker-compose.yml)
+#   LEGACY_COMPOSE_FILE  the pre-move compose (default ~/.config/windows/docker-compose.yml)
 #   CREDENTIALS_FILE  the VM credentials     (default ~/.config/windows/credentials)
 #   DATA_IMAGE        the guest disk image   (default ~/.windows/data.img)
 #   DOCKER_STATE      skip systemctl, use this value
@@ -58,11 +65,18 @@ shopt -s nullglob
 proc_root=${PROC_ROOT:-/proc}
 sys_root=${SYS_ROOT:-/sys}
 compose=${COMPOSE_FILE:-/var/lib/omarchy/windows/docker-compose.yml}
+legacy_compose=${LEGACY_COMPOSE_FILE:-$HOME/.config/windows/docker-compose.yml}
 credentials=${CREDENTIALS_FILE:-$HOME/.config/windows/credentials}
 data_image=${DATA_IMAGE:-$HOME/.windows/data.img}
 
-installed=0
-[[ -f $compose && -f $credentials ]] && installed=1
+# The same test migrate_legacy_compose makes: the old file only counts while
+# the new one is not there yet.
+installed=0 legacy=0
+if [[ -f $compose && -f $credentials ]]; then
+  installed=1
+elif [[ ! -f $compose && -f $legacy_compose ]]; then
+  installed=1 legacy=1
+fi
 
 docker=${DOCKER_STATE-$(/usr/bin/systemctl is-active docker.service 2>/dev/null)}
 [[ $docker =~ ^[a-z-]{0,32}$ ]] || docker=
@@ -81,11 +95,22 @@ if ((installed)); then
   # Only the username, and only if it looks like one (the helper's own
   # valid_username). IFS on the first = is how omarchy-windows-vm reads this
   # file; the PASSWORD line is skipped without ever being assigned.
-  while IFS='=' read -r key value; do
-    [[ $key == USERNAME ]] || continue
-    login=$value
-    break
-  done 2>/dev/null <"$credentials"
+  if ((legacy)); then
+    # The old compose is the user's own file; its environment block holds
+    # `USERNAME: "name"`, read the way the helper's read_compose_value reads
+    # it. The PASSWORD line next to it never matches.
+    while IFS= read -r line; do
+      [[ $line =~ ^[[:space:]]*USERNAME:[[:space:]]*\"(.*)\"[[:space:]]*$ ]] || continue
+      login=${BASH_REMATCH[1]}
+      break
+    done 2>/dev/null <"$legacy_compose"
+  else
+    while IFS='=' read -r key value; do
+      [[ $key == USERNAME ]] || continue
+      login=$value
+      break
+    done 2>/dev/null <"$credentials"
+  fi
   [[ $login =~ ^[A-Za-z0-9_-]{1,20}$ ]] || login=
   for comm_file in "$proc_root"/[0-9]*/comm; do
     read -r comm 2>/dev/null <"$comm_file" || continue

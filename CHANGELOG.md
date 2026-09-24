@@ -20,6 +20,11 @@ chaves.omawin` brings you the latest.
   After Tune made the disk bigger, saving a new password before the next start
   put the old disk size back, while the card still said the next start would
   grow it.
+- **A VM installed with an older Omarchy no longer reads NOT INSTALLED.** Its
+  settings were still in `~/.config/windows`, where Omarchy used to keep them,
+  so the card offered Install, which would have run the setup wizard again. It
+  now shows the VM as stopped, and the first Start finishes Omarchy's move of
+  those settings (it may ask for your password once).
 
 ### Changed
 

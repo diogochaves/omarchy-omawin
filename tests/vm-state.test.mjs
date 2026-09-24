@@ -49,6 +49,35 @@ test('a missing compose file is not-installed too', () => {
   )
 })
 
+test('an install from before Omarchy moved the compose still reads as installed', t => {
+  // Only ~/.config/windows/docker-compose.yml, no root compose and no
+  // credentials file yet: `launch` moves it on the first Start, so the card
+  // must offer Start, not Install. The login comes from the old compose.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omawin-legacy-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const legacy = path.join(dir, 'docker-compose.yml')
+  fs.writeFileSync(legacy, [
+    'services:', '  windows:', '    environment:',
+    '      RAM_SIZE: "8G"', '      USERNAME: "alice"', '      PASSWORD: "USERNAME: \\"x\\""', ''
+  ].join('\n'))
+  const env = {
+    COMPOSE_FILE: path.join(dir, 'none.yml'),
+    CREDENTIALS_FILE: path.join(dir, 'none'),
+    LEGACY_COMPOSE_FILE: legacy
+  }
+  assert.equal(
+    vmState('stopped', env),
+    'installed=1 docker=active pid= frozen= cores= ram= web=000 cid= started= disk=64G login=alice'
+  )
+  // A running VM is still found through /proc as usual.
+  assert.match(vmState('running', env), /^installed=1 docker=active pid=1360395 .* login=alice$/)
+
+  // Once the root compose exists, the old file no longer counts: that is a
+  // moved install, and without credentials it is not a usable one.
+  assert.match(vmState('stopped', { ...env, COMPOSE_FILE: path.join(fixtures, 'stopped/docker-compose.yml') }),
+    /^installed=0 /)
+})
+
 test('not-installed skips both probes even when they would answer', () => {
   // The fixture's procfs holds a live VM: installed=0 must short-circuit the
   // /proc scan and the curl alike, which is what the sampler does on the real

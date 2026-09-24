@@ -47,6 +47,8 @@
 # Environment (all optional, the defaults are the real system):
 #   CREDENTIALS_FILE  the VM credentials     (default ~/.config/windows/credentials)
 #   DATA_IMAGE        the guest disk image   (default ~/.windows/data.img)
+#   LEGACY_COMPOSE_FILE  the pre-move compose, only for which advice to give
+#                     (default ~/.config/windows/docker-compose.yml)
 #   TZ_NAME           skip timedatectl, use this value
 #   CREDS_DRY_RUN     =1 skips the pkexec step (and says so, with the shape it
 #                     would have written), so the tests can exercise the file
@@ -80,6 +82,10 @@ credential() {
 # a command substitution would only kill the subshell and let the script carry
 # on with an empty value.
 missing="no credentials at $credentials: run omarchy-windows-vm install first"
+# An install from before Omarchy moved the compose has no credentials file
+# until its first launch writes one; reinstalling would be the wrong advice.
+[[ -f $credentials || ! -f ${LEGACY_COMPOSE_FILE:-$HOME/.config/windows/docker-compose.yml} ]] ||
+  missing="start the VM once first: Omarchy finishes moving its settings then"
 
 current_disk() {
   local bytes

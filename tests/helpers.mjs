@@ -49,6 +49,7 @@ export function vmState(name, extra = {}) {
       PROC_ROOT: path.join(dir, 'proc'),
       SYS_ROOT: path.join(dir, 'sys'),
       COMPOSE_FILE: path.join(dir, 'docker-compose.yml'),
+      LEGACY_COMPOSE_FILE: path.join(dir, 'legacy-compose.yml'),
       CREDENTIALS_FILE: path.join(dir, 'credentials'),
       DATA_IMAGE: dataImage(name),
       DOCKER_STATE: 'active',

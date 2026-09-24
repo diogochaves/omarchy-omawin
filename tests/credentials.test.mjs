@@ -27,7 +27,10 @@ function box(t, { disk = 64, credentials = 'USERNAME=chaves\nPASSWORD=secret\n' 
   return {
     dir,
     file,
-    env: { CREDENTIALS_FILE: file, DATA_IMAGE: image, TZ_NAME: 'UTC', CREDS_DRY_RUN: '1' },
+    env: {
+      CREDENTIALS_FILE: file, DATA_IMAGE: image, TZ_NAME: 'UTC', CREDS_DRY_RUN: '1',
+      LEGACY_COMPOSE_FILE: path.join(dir, 'legacy-compose.yml')
+    },
     read: () => fs.readFileSync(file, 'utf8'),
     mode: () => fs.statSync(file).mode & 0o777
   }
@@ -161,6 +164,16 @@ test('write keeps a pending disk grow, and never shrinks the disk', t => {
   assert.equal(junk.status, 2)
   assert.match(junk.err, /not a disk size/)
   assert.equal(read(), before, 'a refusal leaves the file alone')
+})
+
+test('an install Omarchy has not moved yet is told to start once, not to reinstall', t => {
+  const { dir, env } = box(t, { credentials: null })
+  fs.writeFileSync(path.join(dir, 'legacy-compose.yml'), 'services:\n')
+  for (const args of [['username'], ['password']]) {
+    const result = run(env, args)
+    assert.equal(result.status, 2)
+    assert.match(result.err, /start the VM once first/)
+  }
 })
 
 test('the usage line is what an unknown subcommand gets', () => {

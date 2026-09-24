@@ -172,7 +172,9 @@ see [Polkit rule](#polkit-rule) for what it says and why.
   QEMU process to find it and its `-smp`/`-m`, `/proc/stat` for `btime`, the
   scope's `cgroup.freeze` under `/sys/fs/cgroup`, and whether
   `/var/lib/omarchy/windows/docker-compose.yml` and
-  `~/.config/windows/credentials` exist. Plus `systemctl is-active
+  `~/.config/windows/credentials` exist (or, on an install from before Omarchy
+  moved its compose, whether `~/.config/windows/docker-compose.yml` does: the
+  first Start moves it, and until then the login is read from it). Plus `systemctl is-active
   docker.service`, `systemctl --user is-active omawin-launch` and, after a
   launch ends, the user journal of that one unit.
   For the shape and the login: the apparent size of `~/.windows/data.img`
