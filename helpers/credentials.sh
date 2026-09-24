@@ -50,6 +50,9 @@
 #   LEGACY_COMPOSE_FILE  the pre-move compose, only for which advice to give
 #                     (default ~/.config/windows/docker-compose.yml)
 #   TZ_NAME           skip timedatectl, use this value
+#   COPY_MARK         where `copy` notes what it copied, for `clear`
+#                     (default $XDG_RUNTIME_DIR/omawin/copied)
+#   WL_COPY, WL_PASTE the clipboard tools (default /usr/bin/wl-copy, wl-paste)
 #   CREDS_DRY_RUN     =1 skips the pkexec step (and says so, with the shape it
 #                     would have written), so the tests can exercise the file
 #                     rewrite without a VM or a dialog
@@ -58,6 +61,9 @@ set -uo pipefail
 export LC_ALL=C
 
 credentials=${CREDENTIALS_FILE:-$HOME/.config/windows/credentials}
+copy_mark=${COPY_MARK:-${XDG_RUNTIME_DIR:-/run/user/$UID}/omawin/copied}
+wl_copy=${WL_COPY:-/usr/bin/wl-copy}
+wl_paste=${WL_PASTE:-/usr/bin/wl-paste}
 data_image=${DATA_IMAGE:-$HOME/.windows/data.img}
 
 die() {
@@ -124,26 +130,52 @@ print_password() {
 # Omarchy's clipboard history (shell/plugins/clipboard/capture.sh) skips on:
 # without it the password would be written to
 # ~/.local/state/omarchy/clipboard-history.json and outlive the 30 s clear.
+#
+# What was copied is noted for `clear` as a SHA-256, in a 0600 file under the
+# user's runtime directory (tmpfs, gone at logout): the password itself is not
+# written anywhere new, and `clear` still knows what it copied if the stored
+# password has been changed in the meantime.
 copy_password() {
   local value
   value=$(credential PASSWORD) || die "$missing"
   [[ $value =~ ^[[:print:]]{1,64}$ ]] ||
     die "the stored password is not a single printable line"
-  printf '%s' "$value" | /usr/bin/wl-copy --sensitive --type text/plain ||
+  printf '%s' "$value" | "$wl_copy" --sensitive --type text/plain ||
     die "could not reach the clipboard (wl-copy)"
+  mark "$value"
+}
+
+digest() {
+  local sum _
+  read -r sum _ < <(/usr/bin/sha256sum) || return 1
+  printf '%s' "$sum"
+}
+
+mark() {
+  local sum old_umask
+  sum=$(printf '%s' "$1" | digest) || return 0
+  old_umask=$(umask)
+  umask 077
+  mkdir -p -- "${copy_mark%/*}" 2>/dev/null &&
+    printf '%s\n' "$sum" >"$copy_mark" 2>/dev/null
+  umask "$old_umask"
+  return 0
 }
 
 # `wl-copy --clear` empties the clipboard whoever owns it, so it only runs while
-# the clipboard still holds the password: whatever the user copied since is
-# theirs and stays. The comparison happens here, with both values in this
-# process only; nothing is printed.
+# the clipboard still holds what `copy` put there: whatever the user copied
+# since is theirs and stays. Compared by digest against the note `copy` left,
+# not against the credentials file, which Update password may have changed in
+# the 30 s since. Nothing is printed.
 clear_clipboard() {
-  local value current
-  value=$(credential PASSWORD) || return 0
-  current=$(/usr/bin/timeout 2 /usr/bin/wl-paste --no-newline --type text/plain 2>/dev/null) ||
-    return 0
-  [[ $current == "$value" ]] || return 0
-  /usr/bin/wl-copy --clear || die "could not reach the clipboard (wl-copy)"
+  local want current
+  read -r want 2>/dev/null <"$copy_mark" || return 0
+  rm -f -- "$copy_mark"
+  [[ $want =~ ^[0-9a-f]{64}$ ]] || return 0
+  current=$(/usr/bin/timeout 2 "$wl_paste" --no-newline --type text/plain 2>/dev/null |
+    digest) || return 0
+  [[ $current == "$want" ]] || return 0
+  "$wl_copy" --clear || die "could not reach the clipboard (wl-copy)"
 }
 
 # --- the write --------------------------------------------------------------

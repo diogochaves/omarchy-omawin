@@ -10,8 +10,8 @@ import { helper } from './helpers.mjs'
 // pkexec'd write_compose Tune uses) and leaves the file rewrite, which is the
 // part that is ours: atomic, 0600, two lines, split on the first = only.
 //
-// Nothing here calls wl-copy: `copy` and `clear` are one pipe each into a
-// clipboard that a test has no business owning.
+// Nothing here calls the real wl-copy: `copy` and `clear` are tested against a
+// stand-in clipboard (WL_COPY/WL_PASTE), a plain file in the test directory.
 const GIB = 1024 ** 3
 
 function box(t, { disk = 64, credentials = 'USERNAME=chaves\nPASSWORD=secret\n' } = {}) {
@@ -29,11 +29,29 @@ function box(t, { disk = 64, credentials = 'USERNAME=chaves\nPASSWORD=secret\n' 
     file,
     env: {
       CREDENTIALS_FILE: file, DATA_IMAGE: image, TZ_NAME: 'UTC', CREDS_DRY_RUN: '1',
-      LEGACY_COMPOSE_FILE: path.join(dir, 'legacy-compose.yml')
+      LEGACY_COMPOSE_FILE: path.join(dir, 'legacy-compose.yml'),
+      ...clipboard(dir)
     },
     read: () => fs.readFileSync(file, 'utf8'),
     mode: () => fs.statSync(file).mode & 0o777
   }
+}
+
+// A clipboard that is a file: wl-copy writes stdin to it (or empties it on
+// --clear) and logs its arguments, wl-paste prints it.
+function clipboard(dir) {
+  const board = path.join(dir, 'clipboard')
+  const copy = path.join(dir, 'wl-copy')
+  const paste = path.join(dir, 'wl-paste')
+  fs.writeFileSync(copy, `#!/bin/bash
+echo "$*" >>'${board}.log'
+if [[ $1 == --clear ]]; then : >'${board}'; else cat >'${board}'; fi
+`, { mode: 0o755 })
+  fs.writeFileSync(paste, `#!/bin/bash
+[[ -s '${board}' ]] || exit 1
+cat '${board}'
+`, { mode: 0o755 })
+  return { WL_COPY: copy, WL_PASTE: paste, COPY_MARK: path.join(dir, 'run/copied') }
 }
 
 function run(env, args, input) {
@@ -174,6 +192,45 @@ test('an install Omarchy has not moved yet is told to start once, not to reinsta
     assert.equal(result.status, 2)
     assert.match(result.err, /start the VM once first/)
   }
+})
+
+test('copy puts the password on the clipboard marked sensitive, and notes only a digest', t => {
+  const { dir, env } = box(t)
+  const copied = run(env, ['copy'])
+  assert.equal(copied.status, 0, copied.err)
+  assert.equal(fs.readFileSync(path.join(dir, 'clipboard'), 'utf8'), 'secret')
+  assert.equal(fs.readFileSync(path.join(dir, 'clipboard.log'), 'utf8'), '--sensitive --type text/plain\n')
+  const mark = fs.readFileSync(path.join(dir, 'run/copied'), 'utf8')
+  assert.match(mark, /^[0-9a-f]{64}\n$/)
+  assert.equal(mark.includes('secret'), false)
+  assert.equal(fs.statSync(path.join(dir, 'run/copied')).mode & 0o777, 0o600)
+})
+
+test('clear empties the clipboard only while it still holds what copy put there', t => {
+  const { dir, env } = box(t)
+  const board = path.join(dir, 'clipboard')
+  run(env, ['copy'])
+  assert.equal(run(env, ['clear']).status, 0)
+  assert.equal(fs.readFileSync(board, 'utf8'), '')
+  assert.equal(fs.existsSync(path.join(dir, 'run/copied')), false, 'the note is used up')
+
+  // The user copied something else since: theirs, left alone.
+  run(env, ['copy'])
+  fs.writeFileSync(board, 'something of mine')
+  run(env, ['clear'])
+  assert.equal(fs.readFileSync(board, 'utf8'), 'something of mine')
+
+  // The password was changed after the copy (Update password within the 30 s):
+  // the OLD one is still on the clipboard and is still cleared.
+  run(env, ['copy'])
+  assert.equal(write(env, 'a new one').status, 0)
+  run(env, ['clear'])
+  assert.equal(fs.readFileSync(board, 'utf8'), '')
+
+  // Nothing copied by us, nothing cleared.
+  fs.writeFileSync(board, 'secret')
+  run(env, ['clear'])
+  assert.equal(fs.readFileSync(board, 'utf8'), 'secret')
 })
 
 test('the usage line is what an unknown subcommand gets', () => {
