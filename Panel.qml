@@ -144,7 +144,10 @@ Panel {
       markSize: Style.font.display
       markColor: root.glyphColor
       paused: root.vmState === "paused"
-      opacity: root.pulsing ? root.pulsePhase : 1.0
+      // No pulse here: on the open card the progress bar already says the VM
+      // is on its way, and every step of a second animation is one more
+      // repaint of the whole popup (about 8% of the iGPU in Hyprland,
+      // measured). The bar glyph keeps its pulse.
     }
   }
 
@@ -528,13 +531,31 @@ Panel {
             width: progressTrack.width * 0.38
             color: root.vmState === "stopping" ? root.dim : Color.accent
 
-            NumberAnimation on x {
-              running: progress.visible
-              loops: Animation.Infinite
-              duration: 1800
-              easing.type: Easing.InOutCubic
-              from: root.vmState === "stopping" ? progressTrack.width : -progressFill.width
-              to: root.vmState === "stopping" ? -progressFill.width : progressTrack.width
+            // Stepped, not tweened: a per-frame tween repainted the popup at
+            // the monitor's refresh rate for as long as a start or a first
+            // boot was watched. 44 positions along the same InOutCubic sweep,
+            // 40 ms apart, is the same 1.76 s pass at 25 fps: smooth enough to
+            // read as motion, and the card's only animation (the hero mark
+            // above does not pulse), so each step is one popup repaint. It
+            // only runs while the card is actually open.
+            Timer {
+              id: progressTimer
+              running: progress.visible && root.opened
+              interval: 40
+              repeat: true
+              triggeredOnStart: true
+              property int step: 0
+              readonly property int steps: 44
+              onTriggered: {
+                var t = step / steps
+                var eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+                var reverse = root.vmState === "stopping"
+                var from = reverse ? progressTrack.width : -progressFill.width
+                var to = reverse ? -progressFill.width : progressTrack.width
+                progressFill.x = from + (to - from) * eased
+                step = (step + 1) % (steps + 1)
+              }
+              onRunningChanged: if (!running) step = 0
             }
           }
         }

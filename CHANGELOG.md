@@ -33,6 +33,12 @@ chaves.omawin` brings you the latest.
 - The bar glyph's pulse, while the VM starts or stops, now costs a fraction of
   the GPU it used to: the same breath, drawn at 12.5 frames a second instead of
   every monitor refresh.
+- **The open card uses far less GPU while the VM starts, boots or stops.** Its
+  progress bar moves at 25 frames a second instead of redrawing on every
+  monitor refresh, and only while the card is open; the Windows logo on the
+  card no longer pulses beside it (the one in the bar still does). On a
+  3440x1440 144 Hz screen, Hyprland's share of the GPU with the card open
+  during a start went from about 47% to about 10%.
 
 ## 0.2.0 — 2026-09-13
 
