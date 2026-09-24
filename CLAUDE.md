@@ -2,8 +2,8 @@
 
 Omarchy bar widget (`chaves.omawin`) for Omarchy's Windows VM. QML (`Panel.qml`,
 `Service.qml`), a pure state machine (`lib/State.js`), bash helpers (`helpers/`),
-the polkit rule and its `setup`. The README is the user-facing reference; read its
-"Under the hood" section before changing behaviour.
+the polkit rule and its `setup`. The README is the user-facing page;
+read `docs/under-the-hood.md` before changing behaviour.
 
 ## `main` is the release channel
 
@@ -46,7 +46,7 @@ shows them, and each GitHub release body is copied from it.
   every fix the fixtures can reach.
 - Visual and behaviour checks run in an omabox (load the `omabox` skill), then on
   the real bar. The debug IPC (`mock`, `fail`, `face`) reaches every card face
-  without touching the VM; see the README's IPC table.
+  without touching the VM; see the IPC table in `docs/developing.md`.
 - The real VM may be started, stopped, tuned or removed for testing. Keep its RAM at
   8G or less.
 - Fix one issue per commit, in the agreed order, so each can be tested alone.

@@ -361,8 +361,8 @@ Panel {
     // Debug only: stand a sampler line (an RDP verdict, "ok" or "no", and a
     // pending transient, "start" or "stop") in for the real ones, so every
     // face of the card can be looked at with the VM switched off. An empty
-    // line hands the widget back to the sampler. See the IPC table in the
-    // README.
+    // line hands the widget back to the sampler. See the IPC table in
+    // docs/developing.md.
     function mock(line: string, probe: string, action: string): string {
       service.mockLine = String(line).slice(0, 512)
       service.mockProbe = String(probe)
@@ -376,7 +376,7 @@ Panel {
     // Debug only: paint the failed card without breaking a VM to get there.
     // Cleared by the next successful action or state change, like any other
     // failure — or at once by calling it with an empty string. See the IPC
-    // table in the README.
+    // table in docs/developing.md.
     function fail(text: string): string {
       if (String(text).replace(/^\s+|\s+$/g, "") === "") service.clearDesired()
       else service.fail(text)
