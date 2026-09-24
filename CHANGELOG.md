@@ -25,6 +25,10 @@ chaves.omawin` brings you the latest.
   so the card offered Install, which would have run the setup wizard again. It
   now shows the VM as stopped, and the first Start finishes Omarchy's move of
   those settings (it may ask for your password once).
+- **Cancelling Pause's password dialog now says what happened.** Pause closes
+  the Windows window first; without the optional polkit rule it then asks for
+  your password, and cancelling left the VM running with no window and no word
+  about it. The card now says the VM is still running and to press Connect.
 
 ### Changed
 

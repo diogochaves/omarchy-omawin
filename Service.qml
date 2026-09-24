@@ -525,6 +525,7 @@ QtObject {
   // unpause has run since.
   function launch() {
     root.clearDesired()
+    root.clearNotice()
     root.launching = true
     launchProc.running = true
   }
@@ -615,6 +616,7 @@ QtObject {
   // reads `busy`.)
   function stop() {
     if (root.busy) return
+    root.clearNotice()
     root.setDesired("stop")
     if (root.sample.frozen) {
       root.stopAfterResume = true
@@ -675,6 +677,8 @@ QtObject {
   function pause() {
     if (root.busy) return
     root.clearDesired()
+    root.clearNotice()
+    root.pauseClosedWindow = false
     if (root.sessionOpen) {
       disconnectProc.running = true
       return
@@ -689,6 +693,7 @@ QtObject {
       // Whether or not the unit was still there, nothing holds the RDP
       // session now; freeze.
       root.sessionOpen = false
+      root.pauseClosedWindow = true
       pauseProc.running = true
     }
   }
@@ -709,16 +714,29 @@ QtObject {
   }
 
   property bool reconnectAfterResume: false
+  // Pause had to close the RDP window before freezing (a frozen guest would
+  // hang the client). Without the polkit rule the dialog only comes after
+  // that, so a dismissed one leaves the VM running with no window. It is not
+  // reopened for the user: without the rule that is a second dialog (launch's
+  // own pkexec up_wait) right after they said no, and a "Failed to start"
+  // notification from the launcher if they say no again. The card says what
+  // happened and Connect is one click.
+  property bool pauseClosedWindow: false
 
   property Process pauseProc: Process {
     command: ["/usr/bin/pkexec", "/usr/bin/docker", "pause", "omarchy-windows"]
     environment: ({ LC_ALL: "C" })
     stderr: StdioCollector { id: pauseErr; waitForEnd: true }
     onExited: function (code) {
+      var closedWindow = root.pauseClosedWindow
+      root.pauseClosedWindow = false
       if (code !== 0) {
         var message = root.lastLine(pauseErr.text)
-        if (root.dismissed(message)) root.clearDesired()
-        else root.fail(message || "docker pause exited with status " + code)
+        if (root.dismissed(message)) {
+          root.clearDesired()
+          if (closedWindow)
+            root.notice("Pause cancelled. The VM is still running; press Connect to reopen the window.", true)
+        } else root.fail(message || "docker pause exited with status " + code)
       }
       root.refresh()
     }
