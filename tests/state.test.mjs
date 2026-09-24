@@ -446,7 +446,10 @@ test('dateText is the Settings caption, spelled out by hand', () => {
 test('a start that grew the disk is recorded, kept for that run and dropped after', () => {
   const grown = State.parseSample(RUNNING + ' disk=96G login=chaves')
   assert.equal(grown.disk, '96G')
-  const before = { cores: 4, ram: '16G', disk: '64G', started: STARTED - 3600, lastSeen: NOW - 86400000 }
+  const before = {
+    cores: 4, ram: '16G', disk: '64G', started: STARTED - 3600, lastSeen: NOW - 86400000,
+    pending: { cores: 4, ram: '16G', disk: '96G' }
+  }
   const first = State.cacheFrom(grown, before, NOW)
   assert.deepEqual(first.grew, { from: '64G', to: '96G' })
   assert.match(State.grewNote(grown, first), /grew from 64G to 96G.*Extend Volume/)
@@ -468,6 +471,26 @@ test('a start that grew the disk is recorded, kept for that run and dropped afte
   // Same size, or no size known before: nothing to say.
   assert.equal(State.cacheFrom(grown, { ...before, disk: '96G' }, NOW).grew, undefined)
   assert.equal(State.cacheFrom(grown, null, NOW).grew, undefined)
+
+  // Bigger than the cache but no Tune behind it: a remove and a fresh install
+  // at 96G, with the old install's 64G still cached. A fresh Windows already
+  // uses the whole disk, so no banner.
+  const { pending, ...reinstalled } = before
+  assert.equal(State.cacheFrom(grown, reinstalled, NOW).grew, undefined)
+  // A Tune whose disk this start did not come up with is not a grow either.
+  assert.equal(State.cacheFrom(State.parseSample(RUNNING + ' disk=64G login=chaves'), before, NOW).grew,
+    undefined)
+})
+
+test('a recorded grow does not outlive its run when the start time cannot be read', () => {
+  const noClock = State.parseSample((RUNNING + ' disk=96G login=chaves')
+    .replace('started=' + STARTED, 'started='))
+  const cached = { cores: 4, ram: '16G', disk: '96G', started: STARTED, lastSeen: NOW,
+    grew: { from: '64G', to: '96G' } }
+  // An empty started= still parses (as 0); the cached start time must not
+  // stand in for this run's, or an old banner would come back on every start.
+  assert.equal(noClock.pid, 1360395)
+  assert.equal(State.cacheFrom(noClock, cached, NOW).grew, undefined)
 })
 
 test('grewShape believes only a real grow in the writer\'s spelling', () => {
