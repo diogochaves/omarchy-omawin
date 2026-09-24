@@ -5,6 +5,11 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Fixed
+
+- `sudo ./setup polkit --probe` no longer prints `__priv: command not found`,
+  and its message names the one command line the probe rule allows again.
+
 ## 0.2.1 — 2026-09-24
 
 ### Fixed

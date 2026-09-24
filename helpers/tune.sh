@@ -187,6 +187,7 @@ apply() {
   done
 
   # The root writer's own shapes, applied before anything is elevated.
+  # shellcheck disable=SC2015 # both halves are tests; die exits
   [[ $cores =~ ^[0-9]{1,2}$ ]] && ((10#$cores >= 1)) || die "not a number of cores: $cores"
   [[ $ram =~ ^[0-9]{1,3}G$ ]] || die "not a RAM size: $ram"
   [[ $disk =~ ^[0-9]{1,4}G$ ]] || die "not a disk size: $disk"

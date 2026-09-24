@@ -151,6 +151,8 @@ test('--probe installs a rule that allows only __priv status on an exact match',
   const { status, out } = setup(['polkit', '--yes', '--probe', '--user', 'alice'], { dir })
   assert.equal(status, 0, out)
   assert.match(out, /__priv status extra/)
+  assert.match(out, /one read-only command line, `__priv status`, to alice only/)
+  assert.doesNotMatch(out, /command not found/)
 
   const rule = loadRule(path.join(dir, PROBE))
   const status_ = {

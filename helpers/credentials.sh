@@ -228,6 +228,7 @@ write_password() {
   # The shape is not changed here, only carried through the writer — which
   # accepts nothing less than all six fields. Without it there is nothing to
   # write the compose with, and the widget says so instead of guessing.
+  # shellcheck disable=SC2015 # both halves are tests; die exits
   [[ $cores =~ ^[0-9]{1,2}$ ]] && ((10#$cores >= 1)) ||
     die "the VM's core count is not known yet: start it once first"
   [[ $ram =~ ^[0-9]{1,3}G$ ]] ||

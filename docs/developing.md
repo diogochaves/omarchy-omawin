@@ -15,7 +15,9 @@ sampler, the probe, the state machine, the tune and credentials helpers and
 `setup`, all unprivileged, against fixtures: `tests/fixtures/generate.sh`
 rebuilds the fake `/proc`, `/sys`, compose, credentials and the sparse
 `data.img` those use (that image is `.gitignore`'d — git would store all 64 GiB
-of it — and the tests create it themselves if it is missing).
+of it — and the tests create it themselves if it is missing). They also run
+`tests/shellcheck.sh`, ShellCheck over every tracked shell script (skipped if
+`shellcheck` is not installed).
 
 ## IPC
 

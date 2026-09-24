@@ -1,0 +1,3 @@
+# `a= b= c=` blanks several variables on one line; that is intended here.
+disable=SC1007
+external-sources=true

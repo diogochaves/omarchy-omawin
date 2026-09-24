@@ -44,6 +44,10 @@ shows them, and each GitHub release body is copied from it.
 
 - Tests: `node --test tests/` — all unprivileged, against fixtures. Add a test for
   every fix the fixtures can reach.
+- Shell is shellcheck-clean: `tests/shellcheck.sh` (also run by `node --test`)
+  checks every tracked script with the repo's `.shellcheckrc`. Fix real findings;
+  otherwise a per-line `# shellcheck disable=SCxxxx # reason`. Never change
+  behaviour to please the linter.
 - Visual and behaviour checks run in an omabox (load the `omabox` skill), then on
   the real bar. The debug IPC (`mock`, `fail`, `face`) reaches every card face
   without touching the VM; see the IPC table in `docs/developing.md`.

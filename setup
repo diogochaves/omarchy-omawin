@@ -208,7 +208,7 @@ polkit_probe() {
   cat <<EOF
 installed $probe_dest for user $user
 
-It allows exactly one read-only command line, `__priv status`, to $user only,
+It allows exactly one read-only command line, \`__priv status\`, to $user only,
 and only when pkexec's "program" and "command_line" details match the resolved
 path plus arguments that 49-omawin.rules will match on. Next, as $user:
 
