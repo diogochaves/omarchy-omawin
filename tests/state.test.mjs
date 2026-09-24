@@ -122,6 +122,37 @@ test('stop expires into failed after 130 s with QEMU still alive', () => {
   assert.equal(State.classify(State.parseSample(RUNNING), OK, stop, 1000 + 130000), 'failed')
 })
 
+test('a start or stop that ran out of time says why, instead of an empty red card', () => {
+  const stopped = State.parseSample(STOPPED)
+  const running = State.parseSample(RUNNING)
+  const start = { action: 'start', since: 1000, failed: '' }
+  const stop = { action: 'stop', since: 1000, failed: '' }
+
+  // Still within the window: nothing has failed yet.
+  assert.equal(State.failure(stopped, start, 1000 + 149999), '')
+  assert.equal(State.failure(running, stop, 1000 + 129999), '')
+
+  const late = State.failure(stopped, start, 1000 + 150000)
+  assert.equal(late, 'The VM did not start within 2 min 30 s. If an authorisation dialog ' +
+    'is still open, answer it; otherwise press Start to try again.')
+  assert.equal(State.classify(stopped, null, start, 1000 + 150000), 'failed')
+  assert.equal(State.failure(running, stop, 1000 + 130000), 'Windows did not shut down within ' +
+    '2 min 10 s. It may still be closing; if it stays up, press Stop again.')
+
+  // The tooltip carries the same reason.
+  assert.equal(State.tooltip('failed', stopped, start, null, 1000 + 150000),
+    'Windows VM · FAILED · ' + late)
+
+  // A transient the sampler already contradicted has not failed, however old.
+  assert.equal(State.failure(running, start, 1000 + 999999), '')
+  assert.equal(State.failure(stopped, stop, 1000 + 999999), '')
+  // A helper's own words win, and nothing fails on a VM that is not there.
+  assert.equal(State.failure(stopped, { action: 'start', since: 1000, failed: 'Not authorized' },
+    1000 + 150000), 'Not authorized')
+  assert.equal(State.failure(State.parseSample(ABSENT), start, 1000 + 150000), '')
+  assert.equal(State.failure(stopped, NONE, 1000 + 150000), '')
+})
+
 test('the sampler contradicting stop ends the transient at once', () => {
   const stop = { action: 'stop', since: 1000, failed: '' }
   assert.equal(State.classify(State.parseSample(STOPPED), null, stop, 2000), 'stopped')

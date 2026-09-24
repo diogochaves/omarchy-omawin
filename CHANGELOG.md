@@ -13,6 +13,9 @@ chaves.omawin` brings you the latest.
   entry. It is kept in `~/.local/state/omarchy/clipboard-history.json`.
 - The clear 30 s after Copy no longer erases something you copied in the
   meantime: it only clears the clipboard if the password is still on it.
+- **A start or stop that takes too long now says so.** The card used to turn
+  red with no explanation after 2 min 30 s (start) or 2 min 10 s (stop); it
+  now says what timed out and what to try, and so does the bar tooltip.
 
 ### Changed
 

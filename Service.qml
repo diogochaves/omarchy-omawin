@@ -132,7 +132,9 @@ QtObject {
   // The ready card's "Uptime", from /proc, so it survives a bar reload — and
   // re-evaluates every second while the panel is open, because nowMs does.
   readonly property string uptimeText: State.uptime(root.sample.started, root.nowMs)
-  readonly property string failedMessage: root.desired && root.desired.failed ? root.desired.failed : ""
+  // What went wrong: a helper's own words, or, for a start or stop that ran
+  // out of time, the state machine's (see State.failure).
+  readonly property string failedMessage: State.failure(root.sample, root.desired, root.nowMs)
   readonly property bool dockerActive: root.sample.docker === "active"
   readonly property bool webUp: root.sample.web === 401
 

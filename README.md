@@ -116,8 +116,10 @@ One face per state, with only the buttons that make sense there:
 - **Paused** — frozen in memory, using no CPU. Resume picks up where it left
   off and reopens the window. Stop unpauses first, so Windows shuts down
   cleanly.
-- **Failed** — what went wrong, in the widget's words, and the launch log
-  behind it. The next successful action clears it.
+- **Failed** — what went wrong: the last line Omarchy's launcher, pkexec or
+  xfreerdp printed, or, when a start or stop simply took too long, which one
+  and what to try. The buttons are those of the state underneath, so you can
+  retry. The next successful action clears it.
 
 Every card ends with **Shared folder** and **Login…**: *Shared folder* opens
 `~/Windows`, which the guest sees as a network drive, and *Login…* opens the
