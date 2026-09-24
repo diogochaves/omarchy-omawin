@@ -87,7 +87,7 @@ test('write rewrites the file, keeps the username, and round-trips', t => {
   const next = 'c0rrect=horse$battery "staple"\\'
   const saved = write(env, next)
   assert.equal(saved.status, 0, saved.err)
-  assert.equal(saved.out, 'dry run: compose not rewritten\nok')
+  assert.equal(saved.out, 'dry run: compose not rewritten (RAM=16G CORES=6 DISK=64G)\nok')
 
   assert.equal(read(), 'USERNAME=chaves\nPASSWORD=' + next + '\n')
   assert.equal(mode(), 0o600)
@@ -139,6 +139,28 @@ test('write needs the shape the compose has to be rewritten with', t => {
   assert.match(noDisk.err, /cannot read the disk size of/)
 
   assert.equal(read(), before)
+})
+
+test('write keeps a pending disk grow, and never shrinks the disk', t => {
+  // Tune 64G -> 96G, not started yet: the compose already says 96G while
+  // data.img is still 64G. Saving a password must write 96G back, not 64G.
+  const { env, read } = box(t)
+  const grown = write(env, 'next', ['--cores', '6', '--ram', '16G', '--disk', '96G'])
+  assert.equal(grown.status, 0, grown.err)
+  assert.match(grown.out, /DISK=96G\)/)
+
+  // Without --disk, it is data.img's own size.
+  assert.match(write(env, 'next').out, /DISK=64G\)/)
+
+  const before = read()
+  const shrink = write(env, 'other', ['--cores', '6', '--ram', '16G', '--disk', '32G'])
+  assert.equal(shrink.status, 2)
+  assert.match(shrink.err, /the disk cannot shrink: data\.img is already 64G/)
+
+  const junk = write(env, 'other', ['--cores', '6', '--ram', '16G', '--disk', '—'])
+  assert.equal(junk.status, 2)
+  assert.match(junk.err, /not a disk size/)
+  assert.equal(read(), before, 'a refusal leaves the file alone')
 })
 
 test('the usage line is what an unknown subcommand gets', () => {

@@ -943,7 +943,8 @@ QtObject {
   // Save rewrites the compose (one authorisation, the same write_compose Tune
   // uses, so the copy of the password inside it agrees) and then the
   // credentials file. The shape goes along unchanged: the writer takes all six
-  // fields or none. With no shape known there is nothing to send, and the panel
+  // fields or none, and it is the shape the next start will use, a pending
+  // Tune's disk included, or saving would undo that grow. With no shape known there is nothing to send, and the panel
   // says so rather than guessing — hence the guard here too.
   readonly property bool canSavePassword: root.coresText !== "—" && root.ramText !== "—"
     && root.currentDisk !== ""
@@ -970,7 +971,7 @@ QtObject {
 
   property Process saveProc: Process {
     command: ["/usr/bin/bash", root.helpers + "/credentials.sh", "write",
-      "--cores", root.coresText, "--ram", root.ramText]
+      "--cores", root.coresText, "--ram", root.ramText, "--disk", root.diskText]
     environment: ({ LC_ALL: "C" })
     stdinEnabled: true
     stderr: StdioCollector { id: saveErr; waitForEnd: true }

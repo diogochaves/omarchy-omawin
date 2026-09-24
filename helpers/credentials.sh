@@ -5,7 +5,7 @@
 #   helpers/credentials.sh password      prints the PASSWORD line, for Reveal
 #   helpers/credentials.sh copy          puts the password on the clipboard
 #   helpers/credentials.sh clear         clears the clipboard again
-#   helpers/credentials.sh write --cores N --ram NG
+#   helpers/credentials.sh write --cores N --ram NG [--disk NG]
 #                                        the new password on STDIN: rewrites
 #                                        the compose, then this file
 #
@@ -25,7 +25,11 @@
 #   2. rewrite Omarchy's root-owned compose through
 #      `pkexec omarchy-windows-vm __priv write_compose` — the same one
 #      authorisation Tune asks for, with the shape passed in unchanged, so the
-#      fallback copy of the password inside the compose agrees with this file
+#      fallback copy of the password inside the compose agrees with this file.
+#      The shape is the one the next start will use: a Tune not yet started
+#      has already written its cores, RAM and disk into the compose, and the
+#      widget passes those back, the disk included — reading the disk off
+#      data.img instead would quietly undo a pending grow
 #   3. only then rewrite this file, atomically: mktemp in the same directory
 #      under umask 077, chmod 0600, mv -fT, which is how write_credentials in
 #      omarchy-windows-vm does it
@@ -44,8 +48,9 @@
 #   CREDENTIALS_FILE  the VM credentials     (default ~/.config/windows/credentials)
 #   DATA_IMAGE        the guest disk image   (default ~/.windows/data.img)
 #   TZ_NAME           skip timedatectl, use this value
-#   CREDS_DRY_RUN     =1 skips the pkexec step (and says so), so the tests can
-#                     exercise the file rewrite without a VM or a dialog
+#   CREDS_DRY_RUN     =1 skips the pkexec step (and says so, with the shape it
+#                     would have written), so the tests can exercise the file
+#                     rewrite without a VM or a dialog
 
 set -uo pipefail
 export LC_ALL=C
@@ -159,7 +164,7 @@ save_credentials() {
 }
 
 write_password() {
-  local cores= ram=
+  local cores= ram= disk=
   while (($#)); do
     case $1 in
       --cores)
@@ -170,6 +175,11 @@ write_password() {
       --ram)
         (($# >= 2)) || die "--ram needs a value"
         ram=$2
+        shift
+        ;;
+      --disk)
+        (($# >= 2)) || die "--disk needs a value"
+        disk=$2
         shift
         ;;
       *) die "unknown option: $1" ;;
@@ -185,10 +195,17 @@ write_password() {
   [[ $ram =~ ^[0-9]{1,3}G$ ]] ||
     die "the VM's RAM size is not known yet: start it once first"
 
-  local disk username password tz
-  disk=$(current_disk)
-  [[ $disk =~ ^[0-9]{1,4}G$ ]] ||
+  # The disk is data.img's own size unless a pending Tune has grown it, in
+  # which case that is what the compose already says and must keep saying.
+  # Grow only, as in tune.sh: dockur never shrinks data.img.
+  local now username password tz
+  now=$(current_disk)
+  [[ $now =~ ^[0-9]{1,4}G$ ]] ||
     die "cannot read the disk size of $data_image"
+  [[ -n $disk ]] || disk=$now
+  [[ $disk =~ ^[0-9]{1,4}G$ ]] || die "not a disk size: $disk"
+  ((10#${disk%G} >= 10#${now%G})) ||
+    die "the disk cannot shrink: data.img is already $now"
   username=$(credential USERNAME) || die "$missing"
   [[ $username =~ ^[A-Za-z0-9_-]{1,20}$ ]] || die "the stored username is not a usable one"
 
@@ -202,7 +219,7 @@ write_password() {
   tz=$(timezone)
 
   if [[ ${CREDS_DRY_RUN-} == 1 ]]; then
-    echo "dry run: compose not rewritten"
+    echo "dry run: compose not rewritten (RAM=$ram CORES=$cores DISK=$disk)"
   else
     local message status=0
     message=$(printf 'RAM=%s\nCORES=%s\nDISK=%s\nUSERNAME=%s\nPASSWORD=%s\nTZ=%s\n' \
@@ -248,5 +265,5 @@ case ${1-} in
     shift
     write_password "$@"
     ;;
-  *) die "usage: credentials.sh username | password | copy | clear | write --cores N --ram NG" ;;
+  *) die "usage: credentials.sh username | password | copy | clear | write --cores N --ram NG [--disk NG]" ;;
 esac

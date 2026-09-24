@@ -16,6 +16,10 @@ chaves.omawin` brings you the latest.
 - **A start or stop that takes too long now says so.** The card used to turn
   red with no explanation after 2 min 30 s (start) or 2 min 10 s (stop); it
   now says what timed out and what to try, and so does the bar tooltip.
+- **Update password no longer undoes a disk grow you have not started yet.**
+  After Tune made the disk bigger, saving a new password before the next start
+  put the old disk size back, while the card still said the next start would
+  grow it.
 
 ### Changed
 
