@@ -25,7 +25,8 @@ chaves.omawin` brings you the latest.
   settings were still in `~/.config/windows`, where Omarchy used to keep them,
   so the card offered Install, which would have run the setup wizard again. It
   now shows the VM as stopped, and the first Start finishes Omarchy's move of
-  those settings (it may ask for your password once).
+  those settings. That Start asks for your password to move them, and a
+  second time to start the VM unless you set up the optional polkit rule.
 - **Cancelling Pause's password dialog now says what happened.** Pause closes
   the Windows window first; without the optional polkit rule it then asks for
   your password, and cancelling left the VM running with no window and no word
