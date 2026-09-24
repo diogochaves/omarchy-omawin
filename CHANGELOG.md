@@ -45,6 +45,8 @@ chaves.omawin` brings you the latest.
   ‹ at the top left of the title, where the face's icon was. It replaces the
   Back and Cancel buttons at the bottom, which sat in a different spot on each
   face, next to the main action.
+  Back and Esc work while the VM starts, stops or pauses; they only wait
+  while Tune or Update password is saving, so a typed password is not lost.
 - **Esc goes back one step** from Tune, Login, Update password and Settings
   instead of closing the whole card. On the card itself it still closes it.
 - The bar glyph's pulse, while the VM starts or stops, now costs a fraction of

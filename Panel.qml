@@ -165,7 +165,7 @@ Panel {
       tooltipText: "Back · Esc"
       // Square: as wide as it is tall, the chevron centred by the kit's row.
       implicitWidth: implicitHeight
-      enabled: !service.busy
+      enabled: !root.faceWriting
       opacity: enabled ? 1.0 : 0.45
       onClicked: root.goBack()
     }
@@ -274,7 +274,17 @@ Panel {
 
   // One step back: Update password to Login, Login to wherever it was opened
   // from, every other sub-face to the card. On the card itself it closes it.
+  // Back and Esc hold only while this face's own write is in flight: leaving
+  // Update password mid-save would drop the typed password and land the
+  // helper's answer on another face. Anything else that runs (a stop, a
+  // pause's dialog) is no reason to trap the user on Login or Settings,
+  // which every card now offers.
+  readonly property bool faceWriting:
+    (root.face === "tune" && service.tuneProc.running)
+    || (root.face === "updatePassword" && service.saveProc.running)
+
   function goBack() {
+    if (root.faceWriting) return
     if (root.face === "live") root.close()
     else if (root.face === "updatePassword") root.openFace("login")
     else if (root.face === "login") root.openFace(root.loginFrom)
