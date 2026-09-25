@@ -84,7 +84,7 @@ Windows) and **Login…**.
   rule that lets Start, Stop, Pause and Resume run without a dialog, for you
   only. It opens a terminal, shows you the rule and asks before writing it.
 
-The **‹** at the top left, or **Esc**, goes back.
+**‹ Back** at the top right, or **Esc**, goes back.
 
 ## What it touches
 

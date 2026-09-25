@@ -5,6 +5,14 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Changed
+
+- **Back is now at the top right** of Tune, Login, Update password and
+  Settings, where the gear is on the card, and the Windows logo stays in its
+  place. Esc still goes back.
+- Tune shows the VM's current cores, RAM and disk on its first line, as
+  Current tuning.
+
 ### Fixed
 
 - The settings gear on the card now lines up with the cores · RAM · disk box

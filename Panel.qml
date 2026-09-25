@@ -20,7 +20,8 @@ import "lib/State.js" as State
 // On top of those eight states there are four sub-faces, `face`: Tune (the
 // VM's shape), Login (the stored RDP credentials), Update password and
 // Settings (the optional polkit rule). Each replaces the body of the same card
-// and comes back with the ‹ at the top left (or Esc); the gear in the hero opens Settings from anywhere.
+// and comes back with ‹ Back at the top right (or Esc), where the gear that
+// opens Settings sits on the live faces.
 // The state machine keeps running underneath, so Tune and Update password —
 // the two that rewrite the compose, which is only read at the next start —
 // close themselves the moment the VM stops being stopped.
@@ -135,9 +136,7 @@ Panel {
   readonly property string minusGlyph: ""
   readonly property string plusGlyph: ""
 
-  // The hero's glyph: the Windows mark on the live card, the face's own glyph
-  // on a sub-face. Two components rather than one with a branch inside, so the
-  // mark keeps its pause badge and its pulse and the glyph stays a plain Text.
+  // The hero's glyph: the Windows mark, on every face, with its pause badge.
   readonly property Component winHero: Component {
     WinMark {
       markSize: Style.font.display
@@ -147,27 +146,6 @@ Panel {
       // is on its way, and every step of a second animation is one more
       // repaint of the whole popup (about 8% of the iGPU in Hyprland,
       // measured). The bar glyph keeps its pulse.
-    }
-  }
-
-  // On a sub-face that slot is Back: top left, where apps put it, and the
-  // one way out of every sub-face (Esc does the same, see goBack()).
-  readonly property Component backHero: Component {
-    Button {
-      bordered: true
-      iconText: root.backGlyph
-      iconSize: Style.font.bodySmall
-      fontSize: Style.font.caption
-      verticalPadding: Style.spacing.controlPaddingY
-      horizontalPadding: Style.spacing.sm
-      foreground: root.fg
-      fontFamily: root.family
-      tooltipText: "Back · Esc"
-      // Square: as wide as it is tall, the chevron centred by the kit's row.
-      implicitWidth: implicitHeight
-      enabled: !root.faceWriting
-      opacity: enabled ? 1.0 : 0.45
-      onClicked: root.goBack()
     }
   }
 
@@ -472,9 +450,10 @@ Panel {
         // the failed card rather than only its status line. The alternative
         // was reimplementing the hero, which the kit asks us not to do.
         //
-        // The sub-faces reuse it as they are: their own title, their own glyph
-        // where the Windows mark was, the pill for whatever they have to show
-        // there.
+        // The sub-faces reuse it as they are: their own title under the same
+        // Windows mark, the pill for whatever they have to show there, and
+        // Back where the live faces have the gear: the way in and the way out
+        // share the top right. Esc does the same (see goBack()).
         //
         // The pill is ours, not the hero's `detail`: the hero puts `detail` on
         // the title line but centres its trailing slot on the whole hero, so
@@ -495,15 +474,15 @@ Panel {
           foreground: root.failed && root.live ? root.urgentColor : root.fg
           fontFamily: root.family
           iconOpacity: root.vmState === "not-installed" && root.live ? 0.45 : 1.0
-          iconComponent: root.live ? winHero : backHero
+          iconComponent: winHero
           trailingControl: Component {
             Row {
               id: trailing
-              readonly property string pillText: root.live || root.face === "tune" ? service.detail
+              // Tune shows the shape on its first line instead: the header
+              // would not hold the pill and Back beside "Windows VM · stopped".
+              readonly property string pillText: root.live ? service.detail
                 : root.face === "settings" ? "chaves.omawin " + root.pluginVersion
                 : ""
-              // Hidden when empty, so the hero does not reserve its margin.
-              visible: pillText !== "" || root.live
               spacing: Style.space(10)
 
               BorderSurface {
@@ -541,6 +520,24 @@ Panel {
                 tooltipText: "Settings"
                 opacity: 0.7
                 onClicked: root.openFace("settings")
+              }
+
+              Button {
+                visible: !root.live
+                anchors.verticalCenter: parent.verticalCenter
+                bordered: true
+                iconText: root.backGlyph
+                text: "Back"
+                iconSize: Style.font.bodySmall
+                fontSize: Style.font.caption
+                verticalPadding: Style.spacing.controlPaddingY
+                horizontalPadding: Style.spacing.sm
+                foreground: root.fg
+                fontFamily: root.family
+                tooltipText: "Back · Esc"
+                enabled: !root.faceWriting
+                opacity: enabled ? 1.0 : 0.45
+                onClicked: root.goBack()
               }
             }
           }
@@ -1021,6 +1018,11 @@ Panel {
           visible: root.face === "tune"
           width: parent.width
           spacing: Style.space(14)
+
+          InfoPair {
+            label: "Current tuning"
+            value: service.detail
+          }
 
           Column {
             width: parent.width
