@@ -13,6 +13,8 @@ chaves.omawin` brings you the latest.
 - Tune shows the VM's current cores, RAM and disk on its first line, as
   Current tuning.
 - Settings names the plugin as Omawin 0.2.x, not by its ID chaves.omawin.
+- The marketplace description now says Microsoft Windows 11, virtual machine
+  and RDP, so searching for any of them finds Omawin.
 
 ### Fixed
 

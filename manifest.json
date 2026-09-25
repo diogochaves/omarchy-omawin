@@ -5,7 +5,7 @@
   "version": "0.2.1",
   "author": "Diogo Chaves",
   "license": "MIT",
-  "description": "Windows, from the bar: start, connect to, pause and stop Omarchy's Windows VM from one glyph, tune its cores, RAM and disk, and keep its RDP login — without the Docker socket or the docker group.",
+  "description": "Microsoft Windows 11 from the bar: start, connect to, pause and stop Omarchy's Windows VM (virtual machine, RDP) in one click, tune its cores, RAM and disk, and keep its login. No terminal, no docker group.",
   "kinds": [
     "bar-widget"
   ],
