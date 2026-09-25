@@ -481,7 +481,7 @@ Panel {
               // Tune shows the shape on its first line instead: the header
               // would not hold the pill and Back beside "Windows VM · stopped".
               readonly property string pillText: root.live ? service.detail
-                : root.face === "settings" ? "chaves.omawin " + root.pluginVersion
+                : root.face === "settings" ? "Omawin " + root.pluginVersion
                 : ""
               spacing: Style.space(10)
 

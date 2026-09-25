@@ -12,6 +12,7 @@ chaves.omawin` brings you the latest.
   place. Esc still goes back.
 - Tune shows the VM's current cores, RAM and disk on its first line, as
   Current tuning.
+- Settings names the plugin as Omawin 0.2.x, not by its ID chaves.omawin.
 
 ### Fixed
 
