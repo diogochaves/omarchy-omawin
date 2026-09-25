@@ -474,9 +474,15 @@ Panel {
         //
         // The sub-faces reuse it as they are: their own title, their own glyph
         // where the Windows mark was, the pill for whatever they have to show
-        // there. The gear rides the hero's own trailing slot and is the way
-        // into Settings from every live face.
+        // there.
+        //
+        // The pill is ours, not the hero's `detail`: the hero puts `detail` on
+        // the title line but centres its trailing slot on the whole hero, so
+        // the gear sat half a line below the pill. Pill and gear now share the
+        // trailing slot and the kit centres them together. The pill copies
+        // the hero's own (BorderSurface, control border, dim bold body text).
         PanelHero {
+          id: hero
           title: root.live ? "Windows VM"
             : root.face === "tune" ? "Tune"
             : root.face === "login" ? "Login"
@@ -486,26 +492,56 @@ Panel {
             : root.face === "login" ? "Windows VM · RDP and web viewer"
             : root.face === "settings" ? "Windows VM"
             : "Windows VM · " + service.label.toLowerCase()
-          detail: root.live || root.face === "tune" ? service.detail
-            : root.face === "settings" ? "chaves.omawin " + root.pluginVersion
-            : ""
           foreground: root.failed && root.live ? root.urgentColor : root.fg
           fontFamily: root.family
           iconOpacity: root.vmState === "not-installed" && root.live ? 0.45 : 1.0
           iconComponent: root.live ? winHero : backHero
           trailingControl: Component {
-            Button {
-              visible: root.live
-              iconText: root.gearGlyph
-              iconSize: Style.font.bodySmall
-              fontSize: Style.font.caption
-              verticalPadding: Style.spacing.xs
-              horizontalPadding: Style.spacing.sm
-              foreground: root.fg
-              fontFamily: root.family
-              tooltipText: "Settings"
-              opacity: 0.7
-              onClicked: root.openFace("settings")
+            Row {
+              id: trailing
+              readonly property string pillText: root.live || root.face === "tune" ? service.detail
+                : root.face === "settings" ? "chaves.omawin " + root.pluginVersion
+                : ""
+              // Hidden when empty, so the hero does not reserve its margin.
+              visible: pillText !== "" || root.live
+              spacing: Style.space(10)
+
+              BorderSurface {
+                visible: trailing.pillText !== ""
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: pillLabel.implicitWidth + Style.space(10)
+                implicitHeight: pillLabel.implicitHeight + Style.space(4)
+                color: "transparent"
+                borderSpec: Border.controlSpec("normal", hero.foreground, Color.accent)
+                radius: Style.cornerRadius
+
+                Text {
+                  id: pillLabel
+                  anchors.centerIn: parent
+                  textFormat: Text.PlainText
+                  text: trailing.pillText
+                  color: hero.dim
+                  font.family: root.family
+                  font.pixelSize: Style.font.body
+                  font.bold: true
+                }
+              }
+
+              // The way into Settings from every live face.
+              Button {
+                visible: root.live
+                anchors.verticalCenter: parent.verticalCenter
+                iconText: root.gearGlyph
+                iconSize: Style.font.bodySmall
+                fontSize: Style.font.caption
+                verticalPadding: Style.spacing.xs
+                horizontalPadding: Style.spacing.sm
+                foreground: root.fg
+                fontFamily: root.family
+                tooltipText: "Settings"
+                opacity: 0.7
+                onClicked: root.openFace("settings")
+              }
             }
           }
         }

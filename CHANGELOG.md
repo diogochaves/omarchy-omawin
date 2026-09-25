@@ -7,6 +7,8 @@ chaves.omawin` brings you the latest.
 
 ### Fixed
 
+- The settings gear on the card now lines up with the cores · RAM · disk box
+  beside it, instead of sitting half a line lower.
 - `sudo ./setup polkit --probe` no longer prints `__priv: command not found`,
   and its message names the one command line the probe rule allows again.
 
