@@ -1,4 +1,4 @@
-<p align="center"><img src="preview.png" alt="Omawin: Windows, from the bar. The ready card hanging off the bar glyph, with Connect, Pause, Stop, Web viewer, Shared folder and Login, and the glyph in each of its six states" width="800"></p>
+<p align="center"><img src="preview.png" alt="Omawin: Windows, from the bar. Omarchy's own Windows 11 VM: the ready card open under its glyph in the stock Omarchy bar, with Connect, Pause, Stop, Web viewer, Shared folder and Login" width="800"></p>
 
 # Omawin
 
