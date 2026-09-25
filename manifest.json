@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "chaves.omawin",
   "name": "Omawin",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "author": "Diogo Chaves",
   "license": "MIT",
   "description": "Microsoft Windows 11 from the bar: start, connect to, pause and stop Omarchy's Windows VM (virtual machine, RDP) in one click, tune its cores, RAM and disk, and keep its login. No terminal, no docker group.",

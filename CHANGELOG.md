@@ -5,6 +5,8 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+## 0.2.2 — 2026-09-25
+
 ### Changed
 
 - **Back is now at the top right** of Tune, Login, Update password and
