@@ -70,6 +70,9 @@ Panel {
   // card that is the state underneath. The compose can only be rewritten here,
   // so it gates Tune, Update password and both of their faces.
   readonly property bool stoppedFace: root.stateFace === "stopped"
+  // docker.service reported and not running: the one case the stopped card
+  // mentions Docker at all. An empty reading is a sampler that hasn't said.
+  readonly property bool dockerDown: service.sample.docker !== "" && !service.dockerActive
 
   // Keep this in step with manifest.json: it is only ever printed, on the
   // Settings pill.
@@ -662,7 +665,8 @@ Panel {
           visible: root.live && text !== ""
           textFormat: Text.PlainText
           wrapMode: Text.WordWrap
-          color: root.dim
+          // The stopped card's only paragraph is the Docker warning.
+          color: root.vmState === "stopped" ? root.urgentColor : root.dim
           font.family: root.family
           font.pixelSize: Style.font.caption
           text: {
@@ -677,6 +681,8 @@ Panel {
               return "Frozen: using no CPU, still holding "
                 + (service.sample.ram ? "its " + service.sample.ram + " of RAM" : "all of its RAM")
                 + ". Resume picks up where you left off. Stop frees the RAM."
+            if (root.vmState === "stopped" && root.dockerDown)
+              return "Docker isn't running, so Start will fail. Start it with: sudo systemctl start docker"
             if (root.vmState === "stopping")
               return "ACPI shutdown sent. Windows gets up to 2 minutes to close cleanly."
             return ""
@@ -750,11 +756,13 @@ Panel {
             width: (parent.width - parent.spacing) / 2
             spacing: Style.spacing.labelGap
 
+            // Only when it is down: Docker is enabled at boot on Omarchy, so
+            // "active" told nobody anything, but without it Start fails.
             InfoPair {
-              visible: root.vmState === "stopped"
+              visible: root.vmState === "stopped" && root.dockerDown
               label: "Docker"
-              value: service.sample.docker !== "" ? service.sample.docker : "—"
-              dimValue: !service.dockerActive
+              value: service.sample.docker
+              urgent: true
             }
             // The disk is the apparent size of ~/.windows/data.img. After a
             // Tune that grows it, the note keeps the size it still has beside
@@ -1757,17 +1765,23 @@ Panel {
     property string value: ""
     property string note: ""
     property bool dimValue: false
+    property bool urgent: false
 
     width: parent.width
     spacing: Style.space(8)
 
-    InfoLabel { id: pairLabel; text: pair.label }
+    InfoLabel { id: pairLabel; text: pair.label; color: pair.urgent ? root.urgentColor : root.fg }
     Item {
       width: Math.max(0, pair.width - pairLabel.implicitWidth - pairValue.implicitWidth
         - (pairNote.visible ? pairNote.implicitWidth + pair.spacing : 0) - pair.spacing * 2)
       height: 1
     }
-    InfoValue { id: pairValue; text: pair.value; opacity: pair.dimValue ? 0.6 : 1.0 }
+    InfoValue {
+      id: pairValue
+      text: pair.value
+      color: pair.urgent ? root.urgentColor : root.fg
+      opacity: pair.dimValue ? 0.6 : 1.0
+    }
     InfoLabel { id: pairNote; text: pair.note; visible: pair.note !== "" }
   }
 

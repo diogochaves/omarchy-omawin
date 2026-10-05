@@ -12,6 +12,9 @@ chaves.omawin` brings you the latest.
 - **The paused card says what Pause keeps.** Pause stops Windows using CPU
   but it still holds all of its RAM; the card and Pause's tooltip now say so,
   and that Stop is what frees it.
+- **The stopped card only mentions Docker when it's down.** "Docker: active"
+  is gone; when Docker isn't running the card says so in red, with the
+  command that starts it, since Start can't work without it.
 
 ## 0.2.4 — 2026-10-04
 
