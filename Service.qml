@@ -148,6 +148,8 @@ QtObject {
     // that installs the polkit rule all grey every button out while they run,
     // so a start cannot be stacked on top of a compose rewrite.
     || tuneProc.running || saveProc.running || polkitProc.running
+    // A backup reads data.img for minutes: Start must wait for it.
+    || backupProc.running
 
   // When the current episode began: the moment Start/Stop was pressed while a
   // transient is pending, otherwise the moment this QEMU process first showed
@@ -1160,6 +1162,84 @@ QtObject {
       }
       root.refresh()
     }
+  }
+
+  // ----------------------------------------------------------- the backup
+  // Back up VM…: helpers/backup.sh copies ~/.windows and the credentials file
+  // into ~/.windows.bak-<date>, as the user, VM off. `plan` is read when the
+  // face or Settings opens; `run` streams `copied=` lines and ends on `done=`.
+  // Cancel stops the process, and the helper removes its half-made copy.
+
+  property var backupPlan: null
+  property double backupCopied: 0
+  property string backupDone: ""
+  property string backupError: ""
+  property bool backupCancelled: false
+
+  function readBackupPlan() {
+    if (!backupPlanProc.running) backupPlanProc.running = true
+  }
+
+  property Process backupPlanProc: Process {
+    command: ["/usr/bin/timeout", "-k", "2", "20", "/usr/bin/bash", root.helpers + "/backup.sh", "plan"]
+    environment: ({ LC_ALL: "C" })
+    stdout: StdioCollector { id: backupPlanOut; waitForEnd: true }
+    onExited: function (code) {
+      root.backupPlan = code === 0 ? State.parseBackupPlan(root.lastLine(backupPlanOut.text)) : null
+    }
+  }
+
+  function startBackup() {
+    if (root.busy || !root.actions.backup || !root.backupPlan || !root.backupPlan.ok) return
+    root.backupCopied = 0
+    root.backupDone = ""
+    root.backupError = ""
+    root.backupCancelled = false
+    backupProc.running = true
+  }
+
+  function cancelBackup() {
+    if (!backupProc.running) return
+    root.backupCancelled = true
+    backupProc.running = false
+  }
+
+  // Forget a finished or failed backup, so the face opens on a fresh plan.
+  function clearBackup() {
+    root.backupDone = ""
+    root.backupError = ""
+    root.backupCancelled = false
+    root.backupCopied = 0
+  }
+
+  property Process backupProc: Process {
+    command: ["/usr/bin/bash", root.helpers + "/backup.sh", "run"]
+    environment: ({ LC_ALL: "C" })
+    stdout: SplitParser {
+      onRead: function (data) {
+        var line = root.plain(String(data), 200)
+        var copied = /^copied=([0-9]{1,19})$/.exec(line)
+        if (copied) root.backupCopied = Number(copied[1])
+        var done = /^done=(\.windows\.bak-[0-9-]{10,13})$/.exec(line)
+        if (done) root.backupDone = done[1]
+      }
+    }
+    stderr: StdioCollector { id: backupErr; waitForEnd: true }
+    onExited: function (code) {
+      if (code !== 0 && !root.backupCancelled)
+        root.backupError = root.lastLine(backupErr.text) || "the backup failed"
+      if (code !== 0) root.backupDone = ""
+      root.readBackupPlan()
+    }
+  }
+
+  function openBackup() {
+    if (root.backupDone === "" || backupOpenProc.running) return
+    backupOpenProc.running = true
+  }
+
+  property Process backupOpenProc: Process {
+    command: ["/usr/bin/xdg-open", root.home + "/" + root.backupDone]
   }
 
   // ------------------------------------------------------ the key binding

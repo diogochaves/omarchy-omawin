@@ -266,6 +266,8 @@ Panel {
   // user has said their files are copied out. The switch starts off on every
   // visit: Remove VM… is only pressable once it is turned on.
   property string removeFrom: "settings"
+  // Where Back leads from Back up VM: Settings, Remove or Tune.
+  property string backupFrom: "settings"
   property bool removeAck: false
 
   // One step back: Update password to Login, Remove to wherever it was opened
@@ -278,12 +280,15 @@ Panel {
   readonly property bool faceWriting:
     (root.face === "tune" && service.tuneProc.running)
     || (root.face === "updatePassword" && service.saveProc.running)
+    // A copy in progress is cancelled on purpose, with its own button.
+    || (root.face === "backup" && service.backupProc.running)
 
   function goBack() {
     if (root.faceWriting) return
     if (root.face === "live") root.close()
     else if (root.face === "updatePassword") root.openFace("login")
     else if (root.face === "remove") root.openFace(root.removeFrom)
+    else if (root.face === "backup") root.openFace(root.backupFrom)
     else root.openFace("live")
   }
 
@@ -304,7 +309,8 @@ Panel {
     // The faces that rewrite the compose or remove the VM exist only for one
     // that is off. Their buttons can only reach them then, but the IPC `face`
     // can be asked for one at any time: it gets the card instead.
-    if (!root.stoppedFace && (name === "tune" || name === "updatePassword" || name === "remove"))
+    if (!root.stoppedFace
+      && (name === "tune" || name === "updatePassword" || name === "remove" || name === "backup"))
       name = "live"
     if (name === "tune") {
       service.clearNotice()
@@ -314,10 +320,17 @@ Panel {
     if (name === "settings") {
       service.readRule()
       service.readKey()
+      service.readBackupPlan()
     }
     if (name === "remove") {
       root.removeFrom = root.face === "tune" ? "tune" : "settings"
       root.removeAck = false
+    }
+    if (name === "backup") {
+      root.backupFrom = root.face === "tune" || root.face === "remove" ? root.face : "settings"
+      // A finished or failed copy is shown once; the next visit starts over.
+      if (!service.backupProc.running) service.clearBackup()
+      service.readBackupPlan()
     }
     if (name === "updatePassword") {
       service.clearNotice()
@@ -342,7 +355,8 @@ Panel {
   // it is only offered for a VM that is off.
   onVmStateChanged: {
     if (!root.stoppedFace
-      && (root.face === "tune" || root.face === "updatePassword" || root.face === "remove")) {
+      && (root.face === "tune" || root.face === "updatePassword" || root.face === "remove"
+        || root.face === "backup")) {
       root.dropPasswordField()
       root.face = "live"
     }
@@ -420,7 +434,7 @@ Panel {
     // faces that only exist for a stopped VM open only on one, and nothing
     // runs. Anything else means "live".
     function face(name: string): string {
-      var faces = ["live", "tune", "login", "updatePassword", "settings", "remove"]
+      var faces = ["live", "tune", "login", "updatePassword", "settings", "remove", "backup"]
       root.openFace(faces.indexOf(String(name)) >= 0 ? String(name) : "live")
       return root.face
     }
@@ -519,6 +533,7 @@ Panel {
             : root.face === "login" ? "Login"
             : root.face === "updatePassword" ? "Update login"
             : root.face === "remove" ? "Remove VM"
+            : root.face === "backup" ? "Back up VM"
             : "Settings"
           meta: root.live ? service.label
             : root.face === "login" ? "Windows VM · RDP and web viewer"
@@ -1249,15 +1264,16 @@ Panel {
               textFormat: Text.StyledText
               wrapMode: Text.WordWrap
               color: root.dim
+              linkColor: root.fg
               font.family: root.family
               font.pixelSize: Style.font.caption
-              text: "A disk can't shrink. For a smaller one, back up, then <b>Remove VM →</b> and Install… again."
+              text: "A disk can't shrink. For a smaller one, <a href=\"backup\"><b>Back up VM →</b></a>, then <a href=\"remove\"><b>Remove VM →</b></a> and Install… again."
+              onLinkActivated: function (link) {
+                if ((link === "backup" || link === "remove") && root.can(link)) root.openFace(link)
+              }
 
-              MouseArea {
-                anchors.fill: parent
-                enabled: root.can("remove")
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.openFace("remove")
+              HoverHandler {
+                cursorShape: parent.hoveredLink !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor
               }
             }
           }
@@ -1647,6 +1663,52 @@ Panel {
             }
           }
 
+          // Back up sits right above Remove, which asks for one. Only for a VM
+          // that exists; the button only while it is off.
+          PanelSeparator {
+            visible: root.vmState !== "not-installed"
+            foreground: root.fg
+          }
+
+          Column {
+            visible: root.vmState !== "not-installed"
+            width: parent.width
+            spacing: Style.spacing.labelGap
+
+            FieldHeader {
+              label: "Back up the VM"
+              hint: service.backupProc.running
+                ? "copying · " + State.gbText(service.backupCopied)
+                : service.backupPlan && service.backupPlan.last > 0
+                  ? "last: " + State.dateText(service.backupPlan.last * 1000) : ""
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              wrapMode: Text.WordWrap
+              color: root.dim
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              text: root.stoppedFace
+                ? "Copies Windows' disk and login next to the original, so a Tune, update or Remove can be undone."
+                : "Stop the VM to back it up: a copy of a disk Windows is writing to would be torn."
+            }
+          }
+
+          ActionRow {
+            id: backupSettingsRow
+            visible: root.vmState !== "not-installed"
+            cells: 1
+            ActionButton {
+              width: backupSettingsRow.cellWidth
+              iconText: root.copyGlyph
+              text: "Back up VM…"
+              allowed: (root.can("backup") || service.backupProc.running) && root.stoppedFace
+              onClicked: root.openFace("backup")
+            }
+          }
+
           // The way to Remove: last on the rarest face, three deliberate steps
           // from the card (the gear, this button, the switch on the face it
           // opens), and never beside Start. Only for a VM that exists.
@@ -1693,6 +1755,162 @@ Panel {
           }
         }
 
+        // =========================== Back up VM ============================
+        // helpers/backup.sh plan/run: ~/.windows and the credentials file into
+        // ~/.windows.bak-<date>, as the user, VM off. Four states: the plan
+        // (with the room check), copying (progress, Cancel), done, failed.
+        Column {
+          id: backupFace
+          visible: root.face === "backup"
+          width: parent.width
+          spacing: Style.space(14)
+
+          readonly property var plan: service.backupPlan
+          readonly property bool running: service.backupProc.running
+          readonly property bool done: service.backupDone !== ""
+
+          // ---- the plan
+          Column {
+            visible: !backupFace.running && !backupFace.done
+            width: parent.width
+            spacing: Style.spacing.labelGap
+
+            InfoPair {
+              label: "Windows' disk"
+              value: service.currentDisk !== "" ? service.currentDisk : "—"
+              note: backupFace.plan ? State.gbText(backupFace.plan.used) + " written" : ""
+            }
+            InfoPair {
+              label: "Login"
+              value: "~/.config/windows/credentials"
+              dimValue: true
+            }
+            InfoPair {
+              label: "Copy to"
+              value: backupFace.plan ? "~/" + backupFace.plan.target : "—"
+            }
+            InfoPair {
+              label: "Space"
+              value: !backupFace.plan ? "—"
+                : backupFace.plan.reflink
+                  ? "instant here · " + State.gbText(backupFace.plan.free) + " free"
+                  : "needs " + State.gbText(backupFace.plan.used) + " · " + State.gbText(backupFace.plan.free) + " free"
+              urgent: !!backupFace.plan && !backupFace.plan.ok
+            }
+          }
+
+          Text {
+            visible: !backupFace.running && !backupFace.done
+            width: parent.width
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: service.backupError !== "" || (backupFace.plan && !backupFace.plan.ok) ? root.urgentColor : root.dim
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            text: service.backupError !== "" ? "The backup failed: " + service.backupError
+              : !backupFace.plan ? "Reading the VM's size…"
+              : !backupFace.plan.ok ? "Not enough room for a full copy. Free some space, or copy ~/.windows to another drive by hand."
+              : "Same drive as the original: this saves you from a bad Tune, update or Remove, not from a dead drive. To keep a copy elsewhere, copy that folder off."
+          }
+
+          ActionRow {
+            id: backupRow
+            visible: !backupFace.running && !backupFace.done
+            cells: 1
+            ActionButton {
+              width: backupRow.cellWidth
+              iconText: root.copyGlyph
+              text: "Back up"
+              allowed: root.can("backup") && !!service.backupPlan && service.backupPlan.ok
+              onClicked: service.startBackup()
+            }
+          }
+
+          // ---- copying
+          InfoPair {
+            visible: backupFace.running
+            label: "Copying Windows' disk"
+            value: State.gbText(service.backupCopied)
+              + (backupFace.plan ? " of " + State.gbText(backupFace.plan.used) : "")
+          }
+
+          Rectangle {
+            visible: backupFace.running
+            width: parent.width
+            height: Style.space(6)
+            color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.12)
+
+            Rectangle {
+              height: parent.height
+              color: Color.accent
+              width: parent.width * Math.min(1, backupFace.plan && backupFace.plan.used > 0
+                ? service.backupCopied / backupFace.plan.used : 0)
+            }
+          }
+
+          Text {
+            visible: backupFace.running
+            width: parent.width
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.dim
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            text: "Start stays off until the copy ends. Cancel deletes the half-made copy."
+          }
+
+          ActionRow {
+            id: backupCancelRow
+            visible: backupFace.running
+            cells: 1
+            ActionButton {
+              width: backupCancelRow.cellWidth
+              iconText: root.closeGlyph
+              text: "Cancel"
+              allowed: true
+              onClicked: service.cancelBackup()
+            }
+          }
+
+          // ---- done
+          InfoPair {
+            visible: backupFace.done
+            label: "Saved to"
+            value: "~/" + service.backupDone
+          }
+
+          Text {
+            visible: backupFace.done
+            width: parent.width
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.dim
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            text: "To restore, follow \"Restoring a backed-up VM\" in the README. Delete old backups from the file manager."
+          }
+
+          ActionRow {
+            id: backupDoneRow
+            visible: backupFace.done
+            cells: 2
+            ActionButton {
+              width: backupDoneRow.cellWidth
+              iconText: root.folderGlyph
+              text: "Show in folder"
+              allowed: true
+              onClicked: { service.openBackup(); root.close() }
+            }
+            ActionButton {
+              width: backupDoneRow.cellWidth
+              iconText: root.checkGlyph
+              text: "Done"
+              allowed: true
+              onClicked: root.goBack()
+            }
+          }
+        }
+
         // ============================ Remove ===============================
         // The last thing read before Omarchy's terminal, whose own prompt only
         // asks "Remove Windows VM and delete all associated data?": so the
@@ -1706,7 +1924,19 @@ Panel {
 
           BannerBox {
             accentColor: root.urgentColor
-            text: "Back up first. Everything inside Windows is deleted: your files, apps and settings. Copy what you want to keep into the Shared folder, which stays. To do that, Start and Connect from the card, then come back."
+            text: "Back up first. Everything inside Windows is deleted: your files, apps and settings. Keep the whole VM with Back up VM, or copy what you want into the Shared folder, which stays (Start and Connect from the card, then come back)."
+          }
+
+          ActionRow {
+            id: removeBackupRow
+            cells: 1
+            ActionButton {
+              width: removeBackupRow.cellWidth
+              iconText: root.copyGlyph
+              text: "Back up VM…"
+              allowed: root.can("backup")
+              onClicked: root.openFace("backup")
+            }
           }
 
           Column {
@@ -1744,6 +1974,11 @@ Panel {
             InfoPair {
               label: "Shared folder"
               value: "~/Windows"
+            }
+            InfoPair {
+              label: "Backups"
+              value: "~/.windows.bak-*"
+              dimValue: true
             }
             InfoPair {
               label: "Omawin"

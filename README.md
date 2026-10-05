@@ -105,10 +105,14 @@ Windows) and **Login…**.
 - **Settings** (the gear) turns **Passwordless actions** on or off: a polkit
   rule that lets Start, Stop, Pause and Resume run without a dialog, for you
   only. It opens a terminal, shows you the rule and asks before writing it.
+- **Back up VM…** (in Settings, VM off) copies Windows' disk and login into
+  `~/.windows.bak-<date>`, next to the original: instant on btrfs, a full
+  copy elsewhere, with progress and Cancel. Restoring is by hand: see
+  [Restoring a backed-up VM](#restoring-a-backed-up-vm).
 - **Remove VM…** (in Settings, VM off) deletes Windows and everything in it,
   for a fresh start or a smaller disk. It lists what goes and what stays, and
-  asks you to say you've backed up: copy what you want to keep into the
-  Shared folder first, which stays. Then Omarchy's own remover runs in a
+  asks you to say you've backed up: Back up VM…, or copy what you want to keep
+  into the Shared folder, which stays. Then Omarchy's own remover runs in a
   terminal and asks you to confirm.
 
 **‹ Back** at the top right, or **Esc**, goes back.
@@ -120,11 +124,15 @@ and `consoleState` properties.
 
 ## Restoring a backed-up VM
 
-Back up two things: the `~/.windows` folder (the disk) and
-`~/.config/windows/credentials` (the login Connect uses). After reinstalling
-Omarchy:
+A backup is two things: the `~/.windows` folder (the disk) and
+`~/.config/windows/credentials` (the login Connect uses). **Settings › Back
+up VM…** copies both, with the VM off, into `~/.windows.bak-<date>`: its
+`windows` folder is the disk, its `credentials` file the login. It is on the
+same drive, so copy that folder somewhere else to survive a reinstall or a
+dead drive. To restore, with the VM off (or after reinstalling Omarchy):
 
-1. Copy the `~/.windows` folder back into your home.
+1. Copy the backup's `windows` folder back as `~/.windows` (move the current
+   one aside first if there is one).
 2. Press **Install…** on the card. For the username and password, enter the
    two lines of the backed-up credentials file. Pick a disk at least as big as
    the old one; cores and RAM are up to you, and Tune changes them later.

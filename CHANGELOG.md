@@ -7,6 +7,13 @@ chaves.omawin` brings you the latest.
 
 ### Added
 
+- **Back up VM… keeps a copy of Windows before you change it.** In Settings,
+  with the VM off, it copies Windows' disk and login into
+  `~/.windows.bak-<date>`: instant on btrfs, Omarchy's default, and a full
+  copy with progress and Cancel elsewhere. The Remove face and Tune's
+  "a disk can't shrink" line point to it. Restoring is by hand, as the README
+  explains.
+
 - **A key for Windows, shown on the card.** Settings › Key binding gives you
   the line to add to bindings.lua, with Copy line and Open bindings.lua.
   Once it's there, the stopped card and the tooltip show your key (say

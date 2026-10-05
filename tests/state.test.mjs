@@ -201,7 +201,7 @@ test('detail prefers the live sample, falls back to the cache, else empty', () =
 // The panel's buttons, state by state. Everything not listed is disabled.
 const EXPECTED = {
   'not-installed': ['install'],
-  'stopped': ['start', 'shared', 'tune', 'remove'],
+  'stopped': ['start', 'shared', 'tune', 'remove', 'backup'],
   'starting': ['shared'],
   'booting': ['stop', 'web', 'shared'],
   'ready': ['connect', 'stop', 'pause', 'web', 'shared'],
@@ -611,4 +611,18 @@ test('tooltip names the key on the stopped and ready states', () => {
   assert.equal(State.tooltip('stopped', stopped, NONE), State.tooltip('stopped', stopped, NONE, null, NaN, ''))
   assert.equal(State.KEY_SHAPE.test(key), true)
   assert.equal(State.KEY_SHAPE.test('SUPER+ALT+W'), false)
+})
+
+test('parseBackupPlan reads the helper line and refuses anything else', () => {
+  const plan = State.parseBackupPlan(
+    'ok=1 reflink=0 used=24696061952 free=1616073883648 target=.windows.bak-2026-10-04-2 last=1790812800\n')
+  assert.deepEqual(plan, { ok: true, reflink: false, used: 24696061952, free: 1616073883648,
+    target: '.windows.bak-2026-10-04-2', last: 1790812800 })
+  assert.equal(State.parseBackupPlan('ok=1 reflink=1 used=1 free=2 target=.windows.bak-2026-10-04 last=').last, 0)
+  assert.equal(State.parseBackupPlan('ok=1 reflink=1 used=1 free=2 target=../etc last='), null)
+  assert.equal(State.parseBackupPlan('ok=yes reflink=1 used=1 free=2 target=.windows.bak-2026-10-04 last='), null)
+  assert.equal(State.parseBackupPlan(''), null)
+  assert.equal(State.gbText(24696061952), '23 GB')
+  assert.equal(State.gbText(1), '1 GB')
+  assert.equal(State.gbText(0), '0 GB')
 })
