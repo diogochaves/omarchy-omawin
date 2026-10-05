@@ -239,7 +239,7 @@ apply() {
   [[ $username =~ ^[A-Za-z0-9_-]{1,20}$ ]] ||
     die "the stored username is not one the VM writer accepts"
   printable "$password" ||
-    die "the stored password is not a single printable line: set it again with Update password"
+    die "the stored password is not a single printable line: set it again with Update login"
 
   tz=$(timezone)
 

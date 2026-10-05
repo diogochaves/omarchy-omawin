@@ -294,7 +294,7 @@ test('clear empties the clipboard only while it still holds what copy put there'
   run(env, ['clear'])
   assert.equal(fs.readFileSync(board, 'utf8'), 'something of mine')
 
-  // The password was changed after the copy (Update password within the 30 s):
+  // The password was changed after the copy (Update login within the 30 s):
   // the OLD one is still on the clipboard and is still cleared.
   run(env, ['copy'])
   assert.equal(write(env, 'a new one').status, 0)

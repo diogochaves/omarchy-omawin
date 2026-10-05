@@ -94,7 +94,7 @@ for ((i = start; i < ${#all[@]}; i++)); do window+=("${all[$i]}"); done
 for line in "${window[@]}"; do
   case $line in
   *ERRCONNECT_LOGON_FAILURE* | *ERRCONNECT_WRONG_PASSWORD*)
-    echo "Windows rejected the username or password. Check Login, and Update password if you changed it in Windows."
+    echo "Windows rejected the username or password. Check Login, and Update login if you changed it in Windows."
     exit 0
     ;;
   *ERRCONNECT_ACCOUNT_LOCKED_OUT*)
@@ -102,7 +102,7 @@ for line in "${window[@]}"; do
     exit 0
     ;;
   *ERRCONNECT_PASSWORD_EXPIRED* | *ERRCONNECT_PASSWORD_CERTAINLY_EXPIRED* | *ERRCONNECT_PASSWORD_MUST_CHANGE*)
-    echo "Windows wants a new password for this account. Change it at http://127.0.0.1:8006, then Update password."
+    echo "Windows wants a new password for this account. Change it at http://127.0.0.1:8006, then Update login."
     exit 0
     ;;
   esac

@@ -1626,7 +1626,7 @@ Panel {
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: service.rulePresent
-              ? "Start, Stop, Pause and Resume run without a dialog. Tune's Apply and Update password still ask: rewriting the VM's configuration stays behind authorisation on purpose, and it is rare."
+              ? "Start, Stop, Pause and Resume run without a dialog. Tune's Apply and Update login still ask: rewriting the VM's configuration stays behind authorisation on purpose, and it is rare."
               : "Installs /etc/polkit-1/rules.d/49-omawin.rules. Opens a terminal; sudo asks for your password once and the file is shown before it is written."
           }
 

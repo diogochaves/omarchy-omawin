@@ -181,7 +181,7 @@ mark() {
 # `wl-copy --clear` empties the clipboard whoever owns it, so it only runs while
 # the clipboard still holds what `copy` put there: whatever the user copied
 # since is theirs and stays. Compared by digest against the note `copy` left,
-# not against the credentials file, which Update password may have changed in
+# not against the credentials file, which Update login may have changed in
 # the 30 s since. Nothing is printed.
 clear_clipboard() {
   local want current

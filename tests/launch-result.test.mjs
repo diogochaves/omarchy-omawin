@@ -34,7 +34,7 @@ function refused(code) {
   ]
 }
 
-const REJECTED = 'Windows rejected the username or password. Check Login, and Update password if you changed it in Windows.'
+const REJECTED = 'Windows rejected the username or password. Check Login, and Update login if you changed it in Windows.'
 
 test('a refused login fails the launch although the launcher exited 0', () => {
   assert.equal(launchResult(refused('ERRCONNECT_LOGON_FAILURE')), REJECTED)
