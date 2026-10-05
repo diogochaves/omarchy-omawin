@@ -15,6 +15,11 @@ chaves.omawin` brings you the latest.
 - **The stopped card only mentions Docker when it's down.** "Docker: active"
   is gone; when Docker isn't running the card says so in red, with the
   command that starts it, since Start can't work without it.
+- **Tune offers RAM sizes in between, and warns before you starve Omarchy.**
+  RAM goes 4, 6, 8, 12, 16, 24, 32, 48G (no more 2G, below Windows 11's
+  minimum), only sizes that leave the machine 4 GB are offered, and above half
+  of it the card says how much is left. Cores start at 2 and warn when Windows
+  would get every thread. A 192G disk joins the list.
 
 ## 0.2.4 — 2026-10-04
 

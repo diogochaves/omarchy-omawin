@@ -181,12 +181,10 @@ Panel {
   property string tuneRam: "4G"
   property string tuneDisk: ""
 
-  // The installer's own RAM list (2-64G), and its disk list with 96G added —
-  // the step between 64 and 128 the mockup offers, since growing a disk by a
-  // little is a more common wish here than doubling it. Both are filtered
-  // against the host in the Tune face below.
-  readonly property var ramSizes: [2, 4, 8, 16, 32, 64]
-  readonly property var diskSizes: [32, 64, 96, 128, 256, 512]
+  // The installer's disk list with 96G and 192G added, since growing a disk by
+  // a little is a more common wish here than doubling it. The RAM list is
+  // State.RAM_SIZES.
+  readonly property var diskSizes: [32, 64, 96, 128, 192, 256, 512]
 
   function resetTune() {
     var cores = parseInt(service.coresText, 10)
@@ -195,24 +193,12 @@ Panel {
     root.tuneDisk = service.diskText !== "—" ? service.diskText : ""
   }
 
-  // What the RAM chips offer: the wizard's own list, cut off at what the
-  // machine has, plus whatever the VM is set to now — a machine that lost RAM
-  // since must still be able to show (and keep) the size in the compose.
-  readonly property var ramChoices: {
-    var list = []
-    for (var i = 0; i < root.ramSizes.length; i++) {
-      if (service.hostRamGb <= 0 || root.ramSizes[i] <= service.hostRamGb)
-        list.push(root.ramSizes[i])
-    }
-    // The VM's size, not the chip picked: picking 8G must not take a 12G
-    // chip the compose was set to off the row.
-    var now = parseInt(service.ramText, 10)
-    if (now > 0 && list.indexOf(now) === -1) {
-      list.push(now)
-      list.sort(function (a, b) { return a - b })
-    }
-    return list
-  }
+  // What the RAM chips offer, and the line under them: see State.ramChoices.
+  // The VM's size, not the chip picked: picking 8G must not take a 12G chip
+  // the compose was set to off the row.
+  readonly property var ramChoices: State.ramChoices(service.hostRamGb, service.ramText)
+  readonly property bool tuneRamBig: State.ramBig(root.tuneRam, service.hostRamGb)
+  readonly property string tuneRamNote: State.tuneRamNote(root.tuneRam, service.hostRamGb)
 
   // The same for the disk, where the current size is always on the list even
   // when it is not one of the six the widget offers.
@@ -1118,9 +1104,11 @@ Panel {
             Row {
               spacing: Style.space(6)
 
+              // Windows 11's minimum. A VM set to 1 by hand still shows 1 and
+              // can go up, just not back down.
               ActionButton {
                 iconText: root.minusGlyph
-                allowed: !service.busy && root.tuneCores > 1
+                allowed: !service.busy && root.tuneCores > 2
                 onClicked: root.tuneCores = root.tuneCores - 1
               }
 
@@ -1138,6 +1126,19 @@ Panel {
                 onClicked: root.tuneCores = root.tuneCores + 1
               }
             }
+
+            // Allowed, but said: with every thread given away the desktop
+            // stutters whenever Windows is busy.
+            Text {
+              visible: service.hostCores > 0 && root.tuneCores >= service.hostCores
+              width: parent.width
+              textFormat: Text.PlainText
+              wrapMode: Text.WordWrap
+              color: root.urgentColor
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              text: "All " + service.hostCores + " threads. Omarchy will stutter whenever Windows is busy."
+            }
           }
 
           Column {
@@ -1147,11 +1148,11 @@ Panel {
             FieldHeader {
               label: "RAM"
               hint: service.hostRamGb > 0
-                ? "of " + service.hostRamGb + "G · guest only, no balloon"
-                : "guest only, no balloon"
+                ? "of " + service.hostRamGb + "G · Windows keeps all of it"
+                : "Windows keeps all of it"
             }
 
-            // The wizard's own list, cut off at what the machine has.
+            // Cut off where it would leave the machine under 4 GB.
             Flow {
               width: parent.width
               spacing: Style.space(6)
@@ -1166,6 +1167,17 @@ Panel {
                   onClicked: root.tuneRam = modelData + "G"
                 }
               }
+            }
+
+            Text {
+              visible: root.tuneRamNote !== ""
+              width: parent.width
+              textFormat: Text.PlainText
+              wrapMode: Text.WordWrap
+              color: root.tuneRamBig ? root.urgentColor : root.dim
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              text: root.tuneRamNote
             }
           }
 

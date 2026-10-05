@@ -571,3 +571,28 @@ test('the usage line and what the card makes of it', () => {
   assert.equal(State.usedText(1048576), '1G used')
   assert.equal(State.usedText(0), '')
 })
+
+// Tune's RAM chips: 4G up, cut off where they'd leave the machine under 4 GB,
+// with the VM's own size kept on the row whatever it is.
+test('ramChoices leaves the machine 4 GB and keeps the VM size', () => {
+  assert.deepEqual(State.ramChoices(60, '16G'), [4, 6, 8, 12, 16, 24, 32, 48])
+  assert.deepEqual(State.ramChoices(16, '8G'), [4, 6, 8, 12])
+  assert.deepEqual(State.ramChoices(8, '4G'), [4])
+  assert.deepEqual(State.ramChoices(0, '16G'), [4, 6, 8, 12, 16, 24, 32, 48])
+  // A size set by hand, or one the machine can no longer spare, stays.
+  assert.deepEqual(State.ramChoices(16, '2G'), [2, 4, 6, 8, 12])
+  assert.deepEqual(State.ramChoices(16, '14G'), [4, 6, 8, 12, 14])
+  assert.deepEqual(State.ramChoices(60, '—'), [4, 6, 8, 12, 16, 24, 32, 48])
+  assert.deepEqual(State.ramChoices(60, '16384M'), [4, 6, 8, 12, 16, 24, 32, 48])
+})
+
+test('tuneRamNote says what is left, and warns above half', () => {
+  assert.equal(State.tuneRamNote('16G', 60), 'Leaves 44 GB for Omarchy and your apps while Windows runs.')
+  assert.equal(State.ramBig('30G', 60), false)
+  assert.equal(State.ramBig('32G', 60), true)
+  assert.equal(State.tuneRamNote('48G', 60),
+    '48G is more than half this machine. It leaves 12 GB for Omarchy and your apps while Windows runs.')
+  assert.equal(State.tuneRamNote('16G', 0), '')
+  assert.equal(State.tuneRamNote('', 60), '')
+  assert.equal(State.ramBig('16G', 0), false)
+})
