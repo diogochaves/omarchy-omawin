@@ -5,6 +5,11 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Changed
+
+- **Settings is shorter.** The Login, Helper and Compose lines are gone: Login
+  has its own button on every card, and the two paths never change.
+
 ## 0.2.4 — 2026-10-04
 
 ### Fixed

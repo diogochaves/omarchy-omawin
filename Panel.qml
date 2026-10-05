@@ -270,17 +270,13 @@ Panel {
   readonly property bool canSave: !service.busy && root.stoppedFace
     && service.canSavePassword && service.passwordFits(newPassword.text)
 
-  // Where Back leads from the Login face: the card, or Settings when Login
-  // was opened from its "view →" line.
-  property string loginFrom: "live"
-
   // Where Back leads from the Remove face, Settings or Tune, and whether the
   // user has said their files are copied out. The switch starts off on every
   // visit: Remove VM… is only pressable once it is turned on.
   property string removeFrom: "settings"
   property bool removeAck: false
 
-  // One step back: Update password to Login, Login to wherever it was opened
+  // One step back: Update password to Login, Remove to wherever it was opened
   // from, every other sub-face to the card. On the card itself it closes it.
   // Back and Esc hold only while this face's own write is in flight: leaving
   // Update password mid-save would drop the typed password and land the
@@ -295,7 +291,6 @@ Panel {
     if (root.faceWriting) return
     if (root.face === "live") root.close()
     else if (root.face === "updatePassword") root.openFace("login")
-    else if (root.face === "login") root.openFace(root.loginFrom)
     else if (root.face === "remove") root.openFace(root.removeFrom)
     else root.openFace("live")
   }
@@ -318,8 +313,6 @@ Panel {
     // can be asked for one at any time: it gets the card instead.
     if (!root.stoppedFace && (name === "tune" || name === "updatePassword" || name === "remove"))
       name = "live"
-    if (name === "login" && root.face !== "updatePassword")
-      root.loginFrom = root.face === "settings" ? "settings" : "live"
     if (name === "tune") {
       service.clearNotice()
       service.readLimits()
@@ -1500,44 +1493,6 @@ Panel {
               text: service.rulePresent ? "Remove rule…" : "Install rule…"
               allowed: !service.busy
               onClicked: { service.rulePresent ? service.removeRule() : service.installRule(); root.close() }
-            }
-          }
-
-          PanelSeparator { foreground: root.fg }
-
-          Column {
-            width: parent.width
-            spacing: Style.spacing.labelGap
-
-            Item {
-              width: parent.width
-              implicitHeight: settingsLogin.implicitHeight
-
-              InfoPair {
-                id: settingsLogin
-                label: "Login"
-                value: service.loginText
-                note: service.loginText !== "—" ? "view →" : ""
-                dimValue: true
-              }
-
-              MouseArea {
-                anchors.fill: parent
-                enabled: service.loginText !== "—"
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.openFace("login")
-              }
-            }
-
-            InfoPair {
-              label: "Helper"
-              value: "/usr/bin/omarchy-windows-vm"
-              dimValue: true
-            }
-            InfoPair {
-              label: "Compose"
-              value: "/var/lib/omarchy/windows"
-              dimValue: true
             }
           }
 
