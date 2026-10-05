@@ -39,7 +39,8 @@ chaves.omawin` brings you the latest.
   RAM goes 4, 6, 8, 12, 16, 24, 32, 48G (no more 2G, below Windows 11's
   minimum), only sizes that leave the machine 4 GB are offered, and above half
   of it the card says how much is left. Cores start at 2 and warn when Windows
-  would get every thread. A 192G disk joins the list.
+  would get every thread. A 192G disk joins the list. Those warnings are in
+  your theme's yellow.
 
 ## 0.2.4 — 2026-10-04
 

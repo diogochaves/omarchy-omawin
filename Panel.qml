@@ -46,6 +46,29 @@ Panel {
   readonly property color fg: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.darker(root.fg, 1.4)
   readonly property color urgentColor: bar ? bar.urgent : Color.urgent
+  // A caution that is not an error ("more than half this machine"): the
+  // theme's own yellow. The shell hands plugins no such role, but every
+  // Omarchy theme's colors.toml has `yellow`, so it is read from there, and
+  // again whenever the theme's colours change. Urgent when there is none.
+  property string themeYellow: ""
+  readonly property color warnColor: root.themeYellow !== "" ? root.themeYellow : root.urgentColor
+
+  property FileView themeColors: FileView {
+    path: Color.currentThemePath + "/colors.toml"
+    watchChanges: false
+    printErrors: false
+    onLoaded: root.themeYellow = State.themeYellow(text())
+    onLoadFailed: root.themeYellow = ""
+  }
+
+  // A theme switch is pushed to Color over the shell's IPC, not through the
+  // file, so its colours changing is the signal to read the file again.
+  Connections {
+    target: Color
+    function onAccentChanged() { root.themeColors.reload() }
+    function onUrgentChanged() { root.themeColors.reload() }
+    function onForegroundChanged() { root.themeColors.reload() }
+  }
   readonly property string family: bar ? bar.fontFamily : Style.font.family
 
   // ------------------------------------------------------------- the state
@@ -1181,7 +1204,7 @@ Panel {
               width: parent.width
               textFormat: Text.PlainText
               wrapMode: Text.WordWrap
-              color: root.urgentColor
+              color: root.warnColor
               font.family: root.family
               font.pixelSize: Style.font.caption
               text: "All " + service.hostCores + " threads. Omarchy will stutter whenever Windows is busy."
@@ -1221,7 +1244,7 @@ Panel {
               width: parent.width
               textFormat: Text.PlainText
               wrapMode: Text.WordWrap
-              color: root.tuneRamBig ? root.urgentColor : root.dim
+              color: root.tuneRamBig ? root.warnColor : root.dim
               font.family: root.family
               font.pixelSize: Style.font.caption
               text: root.tuneRamNote

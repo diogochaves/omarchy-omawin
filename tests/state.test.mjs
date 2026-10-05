@@ -626,3 +626,13 @@ test('parseBackupPlan reads the helper line and refuses anything else', () => {
   assert.equal(State.gbText(1), '1 GB')
   assert.equal(State.gbText(0), '0 GB')
 })
+
+test('themeYellow reads the theme palette, and nothing else', () => {
+  assert.equal(State.themeYellow('accent = "#5492f8"\nred = "#ee5681"\nyellow = "#f6d58c"\nbright_yellow = "#ffffff"\n'), '#f6d58c')
+  assert.equal(State.themeYellow('color3 = "#e0af68"\n'), '#e0af68')
+  assert.equal(State.themeYellow('color3 = "#e0af68"\nyellow = "#f6d58c"\n'), '#f6d58c')
+  assert.equal(State.themeYellow("yellow = '#F6D58C80' # with alpha\n"), '#F6D58C80')
+  assert.equal(State.themeYellow('yellow = "gold"\n'), '')
+  assert.equal(State.themeYellow('# yellow = "#f6d58c"\n'), '')
+  assert.equal(State.themeYellow(''), '')
+})
