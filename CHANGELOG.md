@@ -28,7 +28,9 @@ chaves.omawin` brings you the latest.
 ### Changed
 
 - **Settings is shorter.** The Login, Helper and Compose lines are gone: Login
-  has its own button on every card, and the two paths never change.
+  has its own button on every card, and the two paths never change. The
+  rule's command list folds behind "Show the rule", and the key binding line
+  behind "Set up a key…".
 - **The paused card says what Pause keeps.** Pause stops Windows using CPU
   but it still holds all of its RAM; the card and Pause's tooltip now say so,
   and that Stop is what frees it.

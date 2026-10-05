@@ -167,6 +167,7 @@ Panel {
   readonly property string minusGlyph: ""
   readonly property string trashGlyph: ""
   readonly property string editGlyph: ""
+  readonly property string keyboardGlyph: ""
   readonly property string plusGlyph: ""
 
   // The hero's glyph: the Windows mark, on every face, with its pause badge.
@@ -289,6 +290,11 @@ Panel {
   // user has said their files are copied out. The switch starts off on every
   // visit: Remove VM… is only pressable once it is turned on.
   property string removeFrom: "settings"
+  // Settings folds its two blocks of reference text until asked: the rule's
+  // command lines, and the key line with its buttons. Closed on every visit.
+  property bool showRule: false
+  property bool keySetupOpen: false
+
   // Where Back leads from Back up VM: Settings, Remove or Tune.
   property string backupFrom: "settings"
   property bool removeAck: false
@@ -341,6 +347,10 @@ Panel {
       root.resetTune()
     }
     if (name === "settings") {
+      if (root.face !== "settings") {
+        root.showRule = false
+        root.keySetupOpen = false
+      }
       service.readRule()
       service.readKey()
       service.readBackupPlan()
@@ -1558,9 +1568,27 @@ Panel {
             }
           }
 
+          // Folded by default: read once, when deciding. The terminal `setup`
+          // opens prints the full rule again before writing it.
+          Text {
+            textFormat: Text.PlainText
+            color: root.dim
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            font.underline: true
+            text: root.showRule ? "Hide the rule ▾" : "Show the rule ▸"
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.showRule = !root.showRule
+            }
+          }
+
           // The five command lines, rendered from the same template `setup`
           // installs, so what is read here is what the terminal will show.
           Item {
+            visible: root.showRule
             width: parent.width
             implicitHeight: ruleText.implicitHeight + Style.space(12)
 
@@ -1641,11 +1669,13 @@ Panel {
               font.pixelSize: Style.font.caption
               text: service.keyText !== ""
                 ? "Starts Windows when it's stopped, connects when it's ready."
-                : "One key to start Windows, or connect when it's running. Add this line to ~/.config/hypr/bindings.lua and save:"
+                : root.keySetupOpen
+                  ? "One key to start Windows, or connect when it's running. Add this line to ~/.config/hypr/bindings.lua and save:"
+                  : "One key to start Windows, or connect when it's running."
             }
 
             Rectangle {
-              visible: service.keyText === ""
+              visible: service.keyText === "" && root.keySetupOpen
               width: parent.width
               implicitHeight: keyLineText.implicitHeight + Style.space(12)
               color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.05)
@@ -1666,9 +1696,24 @@ Panel {
             }
           }
 
+          // The action, like every other section's; it unfolds the line and
+          // the two buttons that act on it.
+          ActionRow {
+            id: keySetupRow
+            visible: service.keyText === "" && !root.keySetupOpen
+            cells: 1
+            ActionButton {
+              width: keySetupRow.cellWidth
+              iconText: root.keyboardGlyph
+              text: "Set up a key…"
+              allowed: true
+              onClicked: root.keySetupOpen = true
+            }
+          }
+
           ActionRow {
             id: keyRow
-            visible: service.keyText === ""
+            visible: service.keyText === "" && root.keySetupOpen
             cells: 2
             ActionButton {
               width: keyRow.cellWidth
