@@ -81,8 +81,9 @@ o.bind("SUPER + ALT + W", "Windows VM", "omarchy-shell chaves.omawin primary")
   while Windows boots, which is where you watch a first install.
 - **Ready**: Connect opens the Windows window. Pause, Stop, Web viewer. CPU
   shows how busy Windows is right now.
-- **Paused**: frozen in memory, using no CPU. Resume picks up where it left
-  off and reopens the window.
+- **Paused**: frozen in memory, using no CPU but still holding all of its
+  RAM. Resume picks up where it left off and reopens the window; only Stop
+  gives the RAM back.
 - **Failed**: what went wrong, and what to try. The buttons underneath still
   work, so you can retry.
 

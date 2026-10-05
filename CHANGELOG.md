@@ -9,6 +9,9 @@ chaves.omawin` brings you the latest.
 
 - **Settings is shorter.** The Login, Helper and Compose lines are gone: Login
   has its own button on every card, and the two paths never change.
+- **The paused card says what Pause keeps.** Pause stops Windows using CPU
+  but it still holds all of its RAM; the card and Pause's tooltip now say so,
+  and that Stop is what frees it.
 
 ## 0.2.4 — 2026-10-04
 

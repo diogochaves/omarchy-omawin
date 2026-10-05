@@ -672,8 +672,11 @@ Panel {
               return "Bringing the container up. Omarchy may ask for authorisation."
             if (root.vmState === "booting" && service.stopHeldByLauncher)
               return "The launcher holds the VM while Windows boots; Stop unlocks once it answers on RDP."
+            // Pause is mistaken for a way to free memory: say it isn't.
             if (root.vmState === "paused")
-              return "Frozen in memory. Resume picks up where it left off; the guest clock resyncs from the host."
+              return "Frozen: using no CPU, still holding "
+                + (service.sample.ram ? "its " + service.sample.ram + " of RAM" : "all of its RAM")
+                + ". Resume picks up where you left off. Stop frees the RAM."
             if (root.vmState === "stopping")
               return "ACPI shutdown sent. Windows gets up to 2 minutes to close cleanly."
             return ""
@@ -1007,6 +1010,7 @@ Panel {
               width: readyRow.cellWidth
               iconText: root.pauseGlyph
               text: "Pause"
+              tooltipText: "Freeze Windows: frees the CPU, keeps the RAM"
               allowed: root.can("pause")
               onClicked: service.pause()
             }
