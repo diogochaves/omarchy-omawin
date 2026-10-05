@@ -1075,6 +1075,11 @@ QtObject {
     && root.currentDisk !== ""
 
   property string pendingPassword: ""
+  // Update login's other half: the account to log in as, when it changes, and
+  // whether the stored password stays. Both go in argv: a username is no
+  // secret, and "keep" is only a flag.
+  property string pendingUsername: ""
+  property bool keepPassword: false
 
   // The helper's own rule, checked here too, as near as JavaScript gets to
   // ^[[:print:]]{1,64}$ under C.UTF-8: up to 64 characters (not UTF-16 units,
@@ -1086,15 +1091,33 @@ QtObject {
     return length >= 1 && length <= 64 && !/[\u0000-\u001f\u007f-\u009f]/.test(value)
   }
 
-  function savePassword(text) {
+  // Whether `username` is one Omarchy accepts, and whether saving would
+  // change anything: another username, or any password at all (an empty one
+  // keeps what is stored).
+  function usernameFits(username) {
+    return State.LOGIN_SHAPE.test(String(username))
+  }
+
+  function loginChanges(username, password) {
+    return String(username) !== root.loginText || String(password) !== ""
+  }
+
+  function saveLogin(username, text) {
     if (root.busy) return
+    var name = String(username)
     var value = String(text)
-    if (!root.passwordFits(value)) {
+    if (!root.usernameFits(name)) {
+      root.notice("A username is letters, digits, _ and -, up to 20, as Omarchy requires.", false)
+      return
+    }
+    if (value !== "" && !root.passwordFits(value)) {
       root.notice("The password must be 1 to 64 printable characters.", false)
       return
     }
-    if (!root.canSavePassword) return
+    if (!root.canSavePassword || !root.loginChanges(name, value)) return
     root.clearNotice()
+    root.pendingUsername = name !== root.loginText ? name : ""
+    root.keepPassword = value === ""
     root.pendingPassword = value
     // onStarted closes stdin once the password is written, and Quickshell
     // keeps it closed for every later start while stdinEnabled is false: a
@@ -1106,11 +1129,14 @@ QtObject {
   property Process saveProc: Process {
     command: ["/usr/bin/bash", root.helpers + "/credentials.sh", "write",
       "--cores", root.coresText, "--ram", root.ramText, "--disk", root.diskText]
+      .concat(root.pendingUsername !== "" ? ["--username", root.pendingUsername] : [])
+      .concat(root.keepPassword ? ["--keep-password"] : [])
     environment: ({ LC_ALL: "C" })
     stdinEnabled: true
     stderr: StdioCollector { id: saveErr; waitForEnd: true }
     // The new password crosses to the helper here and nowhere else: on stdin,
     // never in argv, and dropped from this object the moment it is written.
+    // A kept password still sends its (empty) line, which the helper drops.
     onStarted: {
       write(root.pendingPassword + "\n")
       root.pendingPassword = ""
@@ -1119,14 +1145,16 @@ QtObject {
     onExited: function (code) {
       var message = root.lastLine(saveErr.text)
       root.pendingPassword = ""
+      root.pendingUsername = ""
+      root.keepPassword = false
       if (code === 0) {
         root.maskPassword()
-        root.notice("Password saved. Connect will use it from now on.", true)
+        root.notice("Login saved. Connect will use it from now on.", true)
         root.passwordSaved()
       } else if (root.dismissed(message)) {
         root.clearNotice()
       } else {
-        root.notice(message || "could not save the password", false)
+        root.notice(message || "could not save the login", false)
       }
       root.refresh()
     }

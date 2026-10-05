@@ -18,7 +18,7 @@ import "lib/State.js" as State
 // like the first-party panels.
 //
 // On top of those eight states there are four sub-faces, `face`: Tune (the
-// VM's shape), Login (the stored RDP credentials), Update password and
+// VM's shape), Login (the stored RDP credentials), Update login and
 // Settings (the optional polkit rule). Each replaces the body of the same card
 // and comes back with ‹ Back at the top right (or Esc), where the gear that
 // opens Settings sits on the live faces.
@@ -257,7 +257,9 @@ Panel {
   // Save needs a password, a known shape to carry through the writer and a VM
   // that is off, for the same reason Apply does.
   readonly property bool canSave: !service.busy && root.stoppedFace
-    && service.canSavePassword && service.passwordFits(newPassword.text)
+    && service.canSavePassword && service.usernameFits(newUsername.text)
+    && (newPassword.text === "" || service.passwordFits(newPassword.text))
+    && service.loginChanges(newUsername.text, newPassword.text)
 
   // Where Back leads from the Remove face, Settings or Tune, and whether the
   // user has said their files are copied out. The switch starts off on every
@@ -293,6 +295,7 @@ Panel {
   function dropPasswordField() {
     newPassword.text = ""
     newPassword.password = true
+    newUsername.text = ""
     keyCatcher.forceActiveFocus()
   }
 
@@ -316,6 +319,7 @@ Panel {
       service.clearNotice()
       newPassword.text = ""
       newPassword.password = true
+      newUsername.text = service.loginText !== "—" ? service.loginText : ""
       // The field is the only thing on that face to do: give it the keyboard,
       // which is also what unblocks the panel's key catcher for typing.
       newPassword.forceActiveFocus()
@@ -474,7 +478,7 @@ Panel {
       // The kit's own instruction for a panel with an inline editor: this
       // handler takes keys BEFORE any descendant, so without `blocked` every
       // character typed into the password field would be eaten as a shortcut.
-      blocked: newPassword.activeFocus
+      blocked: newPassword.activeFocus || newUsername.activeFocus
       // Esc goes back one step on a sub-face and closes only from the card,
       // the way the network panel's Esc cancels its prompt before anything.
       onCloseRequested: root.goBack()
@@ -507,7 +511,7 @@ Panel {
           title: root.live ? "Windows VM"
             : root.face === "tune" ? "Tune"
             : root.face === "login" ? "Login"
-            : root.face === "updatePassword" ? "Update password"
+            : root.face === "updatePassword" ? "Update login"
             : root.face === "remove" ? "Remove VM"
             : "Settings"
           meta: root.live ? service.label
@@ -1312,8 +1316,8 @@ Panel {
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: root.stoppedFace
-              ? "Changed the password inside Windows? Save the new one here so Connect keeps working."
-              : "Changed the password inside Windows? Stop the VM first: saving it here also rewrites the compose, which is only read at the next start."
+              ? "Changed the password inside Windows, or want another account? Save it here so Connect keeps working."
+              : "Changed the password inside Windows, or want another account? Stop the VM first: saving it here also rewrites the compose, which is only read at the next start."
           }
 
           ActionRow {
@@ -1322,18 +1326,19 @@ Panel {
             ActionButton {
               width: loginRow2.cellWidth
               iconText: root.keyGlyph
-              text: "Update password…"
+              text: "Update login…"
               allowed: !service.busy && root.stoppedFace
               onClicked: root.openFace("updatePassword")
             }
           }
         }
 
-        // ======================= Update password ===========================
-        // Only what this machine sends when it connects. The account itself is
-        // changed inside Windows; this is where the new password is written
-        // down afterwards, into the credentials file and into the compose's
-        // fallback copy of it — one authorisation, stopped only.
+        // ========================= Update login ============================
+        // Only what this machine sends when it connects: which existing
+        // Windows account, and its password. Accounts are made and changed
+        // inside Windows; this is where the result is written down, into the
+        // credentials file and into the compose's fallback copy of it — one
+        // authorisation, stopped only. (The face keeps its old IPC name.)
         Column {
           visible: root.face === "updatePassword"
           width: parent.width
@@ -1346,15 +1351,34 @@ Panel {
             color: root.dim
             font.family: root.family
             font.pixelSize: Style.font.caption
-            text: "Type the password Windows now has for " + service.loginText
-              + ". It only changes what this machine sends when connecting; it cannot change the account itself."
+            text: "Type an account that already exists in Windows. This changes what this machine sends when connecting; it can't create or rename the account."
           }
 
           Column {
             width: parent.width
             spacing: Style.spacing.labelGap
 
-            FieldHeader { label: "New password"; hint: "printable, up to 64 chars" }
+            FieldHeader { label: "Username"; hint: "letters, digits, _ and -" }
+
+            TextField {
+              id: newUsername
+              width: parent.width
+              foreground: root.fg
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              maximumLength: 20
+              onAccepted: if (root.canSave) service.saveLogin(text, newPassword.text)
+              KeyNavigation.tab: newPassword
+              KeyNavigation.backtab: newPassword
+              Keys.onEscapePressed: root.goBack()
+            }
+          }
+
+          Column {
+            width: parent.width
+            spacing: Style.spacing.labelGap
+
+            FieldHeader { label: "Password"; hint: "empty keeps the current one" }
 
             Row {
               width: parent.width
@@ -1367,7 +1391,10 @@ Panel {
                 foreground: root.fg
                 font.family: root.family
                 font.pixelSize: Style.font.caption
-                onAccepted: if (root.canSave) service.savePassword(text)
+                placeholderText: "unchanged"
+                onAccepted: if (root.canSave) service.saveLogin(newUsername.text, text)
+                KeyNavigation.tab: newUsername
+                KeyNavigation.backtab: newUsername
                 // The field holds the keyboard, so the key catcher never sees
                 // this Esc: it has to go back from here.
                 Keys.onEscapePressed: root.goBack()
@@ -1391,7 +1418,7 @@ Panel {
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: service.canSavePassword
-              ? "To change the account's password: open the Web viewer (the console signs in by itself), Settings › Accounts › Sign-in options, then come back here."
+              ? "Changed the password inside Windows? Web viewer (it signs in by itself) › Settings › Accounts › Sign-in options, then come back here."
               : "The VM's shape is not known yet, and the compose cannot be rewritten without it. Start the VM once, then come back."
           }
 
@@ -1403,7 +1430,7 @@ Panel {
               iconText: root.checkGlyph
               text: "Save…"
               allowed: root.canSave
-              onClicked: service.savePassword(newPassword.text)
+              onClicked: service.saveLogin(newUsername.text, newPassword.text)
             }
           }
         }

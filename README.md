@@ -33,7 +33,7 @@ omarchy bar move chaves.omawin --section right --after omarchy.tray
 ```
 
 Start, Stop, Pause and Resume ask for your password each time until you turn
-on **Passwordless actions** in the card's Settings. Tune and Update password
+on **Passwordless actions** in the card's Settings. Tune and Update login
 always ask.
 
 **Update** with `omarchy plugin update chaves.omawin`.
@@ -98,8 +98,8 @@ Windows) and **Login…**.
   Install… with the size you want.
 - **Login** shows the RDP username, and reveals or copies the password. A
   copied password stays out of Omarchy's clipboard history and is cleared
-  after 30 s. Changed the password inside Windows? **Update password…** so
-  Connect keeps working.
+  after 30 s. Changed the password inside Windows, or want to log in as
+  another account? **Update login…** so Connect keeps working.
 - **Settings** (the gear) turns **Passwordless actions** on or off: a polkit
   rule that lets Start, Stop, Pause and Resume run without a dialog, for you
   only. It opens a terminal, shows you the rule and asks before writing it.
@@ -143,7 +143,7 @@ again. The password is the account's password, not its PIN.
   `127.0.0.1`. Nothing leaves the machine.
 - **Runs**: Omarchy's `omarchy-windows-vm` for start, stop, install and
   remove (the last two in a terminal), and
-  `pkexec docker pause|unpause omarchy-windows`. Tune and Update password
+  `pkexec docker pause|unpause omarchy-windows`. Tune and Update login
   rewrite the VM's compose through the helper's own validated writer, which
   regenerates the whole file: keys you added to it by hand are dropped.
   Passwords go on stdin, never on a command line.

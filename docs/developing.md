@@ -31,7 +31,7 @@ of it — and the tests create it themselves if it is missing). They also run
 | `status` | one line: the painted state, the `vm-state.sh` line behind it and the bar tooltip, e.g. `stopped installed=1 docker=active pid= frozen= cores= ram= web=000 cid= started= disk=64G login=chaves \| Windows VM · STOPPED · 4 cores · 16G · 64G` |
 | `fail <text>` | **debug.** Paints the failed card with `<text>` as the message, without breaking anything to get there. Sticky like a real failure — cleared by the next successful action or state change, or at once with `fail ""`. |
 | `mock <line> [probe] [action]` | **debug.** Stands `<line>` in for `vm-state.sh`, `probe` (`ok`/`no`) in for the RDP probe and `action` (`start`/`stop`) in for a pending transient, so every face of the card can be looked at with the VM switched off. `mock "" "" ""` (all three arguments are required by the IPC) hands the widget back to the real sampler and drops the mocked transient. |
-| `face <name>` | **debug.** Shows one face of the card — `live`, `tune`, `login`, `updatePassword`, `settings` or `remove` — seeded the way a press would seed it, so the sub-faces can be looked at (and screenshotted) without pressing through to them. Anything else means `live`. The faces that only exist for a stopped VM (Tune, Update password, Remove) open only on one (anything else gets `live`), and close themselves when it stops being stopped. |
+| `face <name>` | **debug.** Shows one face of the card — `live`, `tune`, `login`, `updatePassword` (Update login), `settings` or `remove` — seeded the way a press would seed it, so the sub-faces can be looked at (and screenshotted) without pressing through to them. Anything else means `live`. The faces that only exist for a stopped VM (Tune, Update login, Remove) open only on one (anything else gets `live`), and close themselves when it stops being stopped. |
 
 The three debug methods only paint: a mocked line never reaches the cache file
 and none of them runs a command. Text given to them is capped and stripped
@@ -86,7 +86,7 @@ a program to run: the unit name and every command line are constants.
   the VM is coming up or going down, `bar.urgent` on a failure, the state,
   the VM's shape and its uptime in the tooltip, middle click =
   Start/Connect) and the popup card: one face per state plus the four
-  sub-faces (`face`: Tune, Login, Update password, Settings), all drawn with
+  sub-faces (`face`: Tune, Login, Update login, Settings), all drawn with
   the shell's own `PopupCard`/`PanelHero`/`Button`/`ToggleSwitch`/`TextField`
   kit. The two that rewrite the compose close themselves if the VM stops being
   stopped underneath them.

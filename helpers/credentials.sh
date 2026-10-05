@@ -6,8 +6,10 @@
 #   helpers/credentials.sh copy          puts the password on the clipboard
 #   helpers/credentials.sh clear         clears the clipboard again
 #   helpers/credentials.sh write --cores N --ram NG [--disk NG]
-#                                        the new password on STDIN: rewrites
-#                                        the compose, then this file
+#                                [--username NAME] [--keep-password]
+#                                        the new password on STDIN (a line,
+#                                        ignored with --keep-password):
+#                                        rewrites the compose, then this file
 #
 # The file is ~/.config/windows/credentials: the user's own, 0600, exactly two
 # lines, written by `omarchy-windows-vm install` and read by its `launch` for
@@ -18,10 +20,14 @@
 # (the helper's own read_credential does the same). Only the line asked for is
 # ever assigned: `username` cannot print a password by accident.
 #
-# `write` changes what this machine SENDS; it cannot change the Windows account,
-# which was created at first install. The order is deliberate:
+# `write` changes what this machine SENDS; it cannot create, rename or
+# re-password a Windows account, which lives inside Windows. --username picks
+# another existing account to log in as (the username is no secret: the card
+# shows it and it is not a credential on its own); --keep-password keeps the
+# stored password, for a change of username alone. The order is deliberate:
 #
-#   1. validate the new password with the helper's own rule, ^[[:print:]]{1,64}$
+#   1. validate the new username and password with the helper's own rules,
+#      ^[A-Za-z0-9_-]{1,20}$ and ^[[:print:]]{1,64}$
 #   2. rewrite Omarchy's root-owned compose through
 #      `pkexec omarchy-windows-vm __priv write_compose` — the same one
 #      authorisation Tune asks for, with the shape passed in unchanged, so the
@@ -212,9 +218,15 @@ save_credentials() {
 }
 
 write_password() {
-  local cores= ram= disk=
+  local cores= ram= disk= new_username= keep=0
   while (($#)); do
     case $1 in
+      --username)
+        (($# >= 2)) || die "--username needs a value"
+        new_username=$2
+        shift
+        ;;
+      --keep-password) keep=1 ;;
       --cores)
         (($# >= 2)) || die "--cores needs a value"
         cores=$2
@@ -255,13 +267,27 @@ write_password() {
   [[ $disk =~ ^[0-9]{1,4}G$ ]] || die "not a disk size: $disk"
   ((10#${disk%G} >= 10#${now%G})) ||
     die "the disk cannot shrink: data.img is already $now"
-  username=$(credential USERNAME) || die "$missing"
-  [[ $username =~ ^[A-Za-z0-9_-]{1,20}$ ]] || die "the stored username is not a usable one"
+  # Omarchy's own rule for a username (valid_username), which is also all a
+  # Windows account name may be for its installer to have made it.
+  if [[ -n $new_username ]]; then
+    [[ $new_username =~ ^[A-Za-z0-9_-]{1,20}$ ]] ||
+      die "a username is letters, digits, _ and -, up to 20, as Omarchy requires"
+    username=$new_username
+  else
+    username=$(credential USERNAME) || die "$missing"
+    [[ $username =~ ^[A-Za-z0-9_-]{1,20}$ ]] || die "the stored username is not a usable one"
+  fi
 
   # One line on stdin, no trailing newline kept, nothing echoed. read returns
   # non-zero on a last line without a newline, which is fine: it has still
-  # filled `password`.
+  # filled `password`. With --keep-password the line is read and dropped, so
+  # the widget's side of stdin is the same either way.
   IFS= read -r password || true
+  if ((keep)); then
+    password=$(credential PASSWORD) || die "$missing"
+    printable "$password" ||
+      die "the stored password is not a usable one: type a new one"
+  fi
   printable "$password" ||
     die "the password must be 1 to 64 printable characters"
   # Omarchy reads this file back with `IFS='=' read -r key value`, and read
@@ -322,5 +348,5 @@ case ${1-} in
     shift
     write_password "$@"
     ;;
-  *) die "usage: credentials.sh username | password | copy | clear | write --cores N --ram NG [--disk NG]" ;;
+  *) die "usage: credentials.sh username | password | copy | clear | write --cores N --ram NG [--disk NG] [--username NAME] [--keep-password]" ;;
 esac

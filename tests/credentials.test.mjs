@@ -119,6 +119,41 @@ test('write rewrites the file, keeps the username, and round-trips', t => {
   assert.deepEqual(fs.readdirSync(path.dirname(file)).filter(name => name.startsWith('.')), [])
 })
 
+// Update login: another existing Windows account, with or without a new
+// password. The username is Omarchy's own rule; the kept password is the
+// stored one, and the stdin line is read and dropped either way.
+test('write can change the username and keep the stored password', t => {
+  const { env, read } = box(t, { credentials: 'USERNAME=chaves\nPASSWORD=s3cret=x\n' })
+  const both = write(env, 'n3w', ['--cores', '6', '--ram', '16G', '--username', 'diogo'])
+  assert.equal(both.status, 0, both.err)
+  assert.equal(read(), 'USERNAME=diogo\nPASSWORD=n3w\n')
+
+  const kept = write(env, '', ['--cores', '6', '--ram', '16G', '--username', 'Other_1', '--keep-password'])
+  assert.equal(kept.status, 0, kept.err)
+  assert.equal(read(), 'USERNAME=Other_1\nPASSWORD=n3w\n')
+
+  // Whatever arrives on stdin is not used when the password is kept.
+  assert.equal(write(env, 'ignored', ['--cores', '6', '--ram', '16G', '--keep-password']).status, 0)
+  assert.equal(read(), 'USERNAME=Other_1\nPASSWORD=n3w\n')
+})
+
+test('a username Omarchy would refuse changes nothing', t => {
+  const { env, read } = box(t)
+  for (const name of ['two words', 'a.b', 'x'.repeat(21), 'ação', 'x=y']) {
+    const result = write(env, 'n3w', ['--cores', '6', '--ram', '16G', '--username', name])
+    assert.equal(result.status, 2, name)
+    assert.match(result.err, /letters, digits, _ and -, up to 20/)
+  }
+  assert.equal(read(), 'USERNAME=chaves\nPASSWORD=secret\n')
+  assert.equal(write(env, 'n3w', ['--cores', '6', '--ram', '16G', '--username']).status, 2)
+})
+
+test('keeping a password needs one stored', t => {
+  const { env } = box(t, { credentials: 'USERNAME=chaves\n' })
+  const result = write(env, '', ['--cores', '6', '--ram', '16G', '--username', 'diogo', '--keep-password'])
+  assert.equal(result.status, 2)
+})
+
 test('write validates with the helper\'s own rule and changes nothing when it refuses', t => {
   const { env, read } = box(t)
   const before = read()

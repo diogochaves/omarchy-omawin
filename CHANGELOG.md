@@ -5,6 +5,14 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Added
+
+- **Update login: pick which Windows account Connect uses.** Login ›
+  Update login… (was Update password…) now has a username field too, so a
+  restored backup or a second Windows account no longer needs a reinstall.
+  Leave the password empty to keep the current one. It can't create or
+  rename an account in Windows; it writes down one that already exists.
+
 ### Changed
 
 - **Settings is shorter.** The Login, Helper and Compose lines are gone: Login
