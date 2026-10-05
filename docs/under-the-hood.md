@@ -23,8 +23,10 @@ How Omawin works, what it touches, and why. For using it, see the
   warning), and through `helpers/usage.sh` the container cgroup's `cpu.stat`
   and the blocks `data.img` occupies (`stat -c '%b %B'`) for CPU and "used".
   No memory reading: from outside, Windows always holds all of its RAM. Also
-  `timedatectl show -p Timezone`, and `~/.local/state/omawin/49-omawin.rules`
-  — the copy `setup` leaves behind, which is how the Settings switch knows.
+  `timedatectl show -p Timezone`, `~/.local/state/omawin/49-omawin.rules`
+  — the copy `setup` leaves behind, which is how the Settings switch knows —
+  and `~/.config/hypr/bindings.lua`, as text, for the one line that binds
+  `chaves.omawin primary` (`helpers/key-binding.sh`; the file is never run).
 - **Network**: loopback only. A 19-byte X.224 Connection Request to
   `127.0.0.1:3389` and a request to `http://127.0.0.1:8006/` for its status
   code. Nothing leaves the machine.
@@ -40,7 +42,9 @@ How Omawin works, what it touches, and why. For using it, see the
   six `KEY=VALUE` lines on **stdin**; Copy password adds `/usr/bin/wl-copy --sensitive`
   and notes a SHA-256 of what it copied in `$XDG_RUNTIME_DIR/omawin/copied`
   (0600, tmpfs), and 30 s later `wl-paste` plus `wl-copy --clear` if the
-  clipboard still holds exactly that; the Settings switch adds
+  clipboard still holds exactly that; Settings › Key binding adds
+  `/usr/bin/wl-copy` with the constant `o.bind(…)` line, and
+  `omarchy-launch-editor ~/.config/hypr/bindings.lua`; the Settings switch adds
   `sudo <plugin dir>/setup polkit [--remove]` in Omarchy's floating terminal.
   Every command is a constant with an absolute path; nothing is built from
   data, and no password is ever an argument — `/proc/<pid>/cmdline` is

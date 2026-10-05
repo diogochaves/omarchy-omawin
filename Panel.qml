@@ -143,6 +143,7 @@ Panel {
   readonly property string closeGlyph: ""
   readonly property string minusGlyph: ""
   readonly property string trashGlyph: ""
+  readonly property string editGlyph: ""
   readonly property string plusGlyph: ""
 
   // The hero's glyph: the Windows mark, on every face, with its pause badge.
@@ -310,7 +311,10 @@ Panel {
       service.readLimits()
       root.resetTune()
     }
-    if (name === "settings") service.readRule()
+    if (name === "settings") {
+      service.readRule()
+      service.readKey()
+    }
     if (name === "remove") {
       root.removeFrom = root.face === "tune" ? "tune" : "settings"
       root.removeAck = false
@@ -353,7 +357,9 @@ Panel {
       service.refresh()
       // The polkit rule can have been installed or removed from a terminal
       // since the card was last open, so the switch is re-read every time.
+      // So can bindings.lua, which the Key row and Settings read.
       service.readRule()
+      service.readKey()
     } else {
       // A closed card keeps nothing: back to the live face, and the revealed
       // password is dropped rather than waiting out its 15 s, as is one typed
@@ -745,6 +751,28 @@ Panel {
           Column {
             width: (parent.width - parent.spacing) / 2
             spacing: Style.spacing.labelGap
+
+            // The key that starts Windows, from bindings.lua, or the way to
+            // set one up. Docker takes the slot in the rare case it is down.
+            Item {
+              visible: root.vmState === "stopped" && !root.dockerDown
+              width: parent.width
+              implicitHeight: keyPair.implicitHeight
+
+              InfoPair {
+                id: keyPair
+                label: "Key"
+                value: service.keyText !== "" ? service.keyText.replace(/ \+ /g, " ") : "set up →"
+                dimValue: service.keyText === ""
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                enabled: service.keyText === ""
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: root.openFace("settings")
+              }
+            }
 
             // Only when it is down: Docker is enabled at boot on Omarchy, so
             // "active" told nobody anything, but without it Start fails.
@@ -1544,6 +1572,78 @@ Panel {
               text: service.rulePresent ? "Remove rule…" : "Install rule…"
               allowed: !service.busy
               onClicked: { service.rulePresent ? service.removeRule() : service.installRule(); root.close() }
+            }
+          }
+
+          // The key for `primary`: shown when bindings.lua has one, offered as
+          // a line to paste when it does not. Omawin never writes the file.
+          PanelSeparator { foreground: root.fg }
+
+          Column {
+            width: parent.width
+            spacing: Style.spacing.labelGap
+
+            FieldHeader {
+              label: "Key binding"
+              hint: service.keyText !== "" ? "from bindings.lua" : "not set"
+            }
+
+            InfoValue {
+              visible: service.keyText !== ""
+              text: service.keyText
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              wrapMode: Text.WordWrap
+              color: root.dim
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              text: service.keyText !== ""
+                ? "Starts Windows when it's stopped, connects when it's ready."
+                : "One key to start Windows, or connect when it's running. Add this line to ~/.config/hypr/bindings.lua and save:"
+            }
+
+            Rectangle {
+              visible: service.keyText === ""
+              width: parent.width
+              implicitHeight: keyLineText.implicitHeight + Style.space(12)
+              color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.05)
+
+              Text {
+                id: keyLineText
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: Style.space(8)
+                textFormat: Text.PlainText
+                wrapMode: Text.WrapAnywhere
+                color: root.fg
+                font.family: root.family
+                font.pixelSize: Style.font.caption
+                text: service.keyLine
+              }
+            }
+          }
+
+          ActionRow {
+            id: keyRow
+            visible: service.keyText === ""
+            cells: 2
+            ActionButton {
+              width: keyRow.cellWidth
+              iconText: service.keyLineCopied ? root.checkGlyph : root.copyGlyph
+              text: service.keyLineCopied ? "Copied" : "Copy line"
+              allowed: true
+              onClicked: service.copyKeyLine()
+            }
+            ActionButton {
+              width: keyRow.cellWidth
+              iconText: root.editGlyph
+              text: "Open bindings.lua"
+              allowed: true
+              onClicked: { service.openBindings(); root.close() }
             }
           }
 

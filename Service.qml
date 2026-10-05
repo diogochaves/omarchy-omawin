@@ -100,7 +100,7 @@ QtObject {
   // once it is off.
   readonly property string detail: State.detail(root.sample, root.cached)
   readonly property string tooltip: State.tooltip(root.state, root.sample, root.desired,
-    root.cached, root.nowMs)
+    root.cached, root.nowMs, root.keyText)
   // The shape Tune has written and the next start will use, or null. While it
   // is set the pill, the readouts below and the tooltip all show it instead of
   // the shape the VM last ran with — that is the whole point of writing it down.
@@ -320,6 +320,8 @@ QtObject {
 
   Component.onCompleted: {
     mkdirProc.running = true
+    // For the tooltip, which can be read without the card ever opening.
+    root.readKey()
     // Give mkdir a tick, then read whatever is already there. FileView's
     // implicit preload may have raced the directory into existence.
     Qt.callLater(function () { cacheFile.reload() })
@@ -1158,6 +1160,60 @@ QtObject {
       }
       root.refresh()
     }
+  }
+
+  // ------------------------------------------------------ the key binding
+  // A plugin cannot register a key, so the user adds keyLine to their
+  // bindings.lua. helpers/key-binding.sh reads that file as text for a line
+  // binding `chaves.omawin primary` (never running it), and the card shows
+  // the key, or offers the line with Copy and Open. Omawin never writes the
+  // file: the user's configuration stays theirs.
+
+  readonly property string keyLine:
+    'o.bind("SUPER + ALT + W", "Windows VM", "omarchy-shell chaves.omawin primary")'
+  readonly property string bindingsFile: root.home + "/.config/hypr/bindings.lua"
+  property string keyText: ""
+  property bool keyLineCopied: false
+
+  function readKey() {
+    if (!keyProc.running) keyProc.running = true
+  }
+
+  property Process keyProc: Process {
+    command: ["/usr/bin/timeout", "-k", "2", "5", "/usr/bin/bash", root.helpers + "/key-binding.sh"]
+    environment: ({ LC_ALL: "C" })
+    stdout: StdioCollector { id: keyOut; waitForEnd: true }
+    onExited: function (code) {
+      if (code !== 0) return
+      var key = root.plain(root.lastLine(keyOut.text), 120)
+      root.keyText = State.KEY_SHAPE.test(key) ? key : ""
+    }
+  }
+
+  function copyKeyLine() {
+    keyCopyProc.running = false
+    keyCopyProc.running = true
+    root.keyLineCopied = true
+    keyCopiedTimer.restart()
+  }
+
+  // No --sensitive: it is a line of config, and one worth finding again in
+  // the clipboard history.
+  property Process keyCopyProc: Process {
+    command: ["/usr/bin/wl-copy", root.keyLine]
+  }
+
+  property Timer keyCopiedTimer: Timer {
+    interval: 2500
+    onTriggered: root.keyLineCopied = false
+  }
+
+  function openBindings() {
+    if (!bindingsProc.running) bindingsProc.running = true
+  }
+
+  property Process bindingsProc: Process {
+    command: ["/usr/share/omarchy/bin/omarchy-launch-editor", root.bindingsFile]
   }
 
   // ------------------------------------------------------- the polkit rule

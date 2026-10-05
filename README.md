@@ -67,7 +67,9 @@ Two things of Omawin's can stay behind:
 connects when it is up. Hover for its state, shape and uptime.
 
 **A key for it:** add a line like this to `~/.config/hypr/bindings.lua`. The
-key does what a middle click does:
+key does what a middle click does. **Settings › Key binding** has the line
+with Copy and Open buttons, and once it's there the stopped card and the
+tooltip show your key:
 
 ```lua
 o.bind("SUPER + ALT + W", "Windows VM", "omarchy-shell chaves.omawin primary")

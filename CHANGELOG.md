@@ -7,6 +7,11 @@ chaves.omawin` brings you the latest.
 
 ### Added
 
+- **A key for Windows, shown on the card.** Settings › Key binding gives you
+  the line to add to bindings.lua, with Copy line and Open bindings.lua.
+  Once it's there, the stopped card and the tooltip show your key (say
+  SUPER ALT W), which starts Windows, or connects when it's running.
+
 - **Update login: pick which Windows account Connect uses.** Login ›
   Update login… (was Update password…) now has a username field too, so a
   restored backup or a second Windows account no longer needs a reinstall.

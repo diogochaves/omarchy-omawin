@@ -596,3 +596,19 @@ test('tuneRamNote says what is left, and warns above half', () => {
   assert.equal(State.tuneRamNote('', 60), '')
   assert.equal(State.ramBig('16G', 0), false)
 })
+
+// The key for `primary` is named where it does something: Start when stopped,
+// Connect when ready. Anything not shaped like key names is left out.
+test('tooltip names the key on the stopped and ready states', () => {
+  const running = State.parseSample(RUNNING)
+  const stopped = State.parseSample(STOPPED)
+  const key = 'SUPER + ALT + W'
+  assert.equal(State.tooltip('ready', running, NONE, null, NaN, key),
+    'Windows VM · READY · 4 cores · 16G · SUPER + ALT + W connects')
+  assert.match(State.tooltip('stopped', stopped, NONE, null, NaN, key), / · SUPER \+ ALT \+ W starts it$/)
+  assert.doesNotMatch(State.tooltip('paused', running, NONE, null, NaN, key), /SUPER/)
+  assert.doesNotMatch(State.tooltip('stopped', stopped, NONE, null, NaN, '<b>x</b>'), /<b>/)
+  assert.equal(State.tooltip('stopped', stopped, NONE), State.tooltip('stopped', stopped, NONE, null, NaN, ''))
+  assert.equal(State.KEY_SHAPE.test(key), true)
+  assert.equal(State.KEY_SHAPE.test('SUPER+ALT+W'), false)
+})
