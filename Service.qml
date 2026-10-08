@@ -73,6 +73,17 @@ QtObject {
   // top: what "failed" shows the buttons of.
   readonly property string base: State.sampled(root.sample, root.probe)
 
+  // When `state` last became "booting" (Date.now()), 0 while it is anything
+  // else. Leaving "booting" resets it, so a guest reboot from "ready" gets its
+  // own State.BOOT_PATIENCE_MS. No timer of its own: while booting, the probe
+  // and the sampler bump `nowMs` every few seconds, which is enough to notice.
+  property double bootingSince: 0
+  onStateChanged: root.bootingSince = root.state === "booting" ? Date.now() : 0
+  // RDP has not answered for longer than a boot takes: the glyph holds still
+  // and the booting card says why. The state itself stays "booting".
+  readonly property bool bootOverdue: State.bootOverdue(root.state, root.bootingSince, root.nowMs)
+  readonly property string bootOverdueNote: State.bootOverdueNote(root.state, root.bootingSince, root.nowMs)
+
   // While the omawin-launch unit is alive an RDP window is already open (or
   // on its way), and `launch -k` would only tell us so: Start and Connect
   // are switched off for that time rather than left as silent no-ops.

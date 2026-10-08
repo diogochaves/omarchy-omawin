@@ -44,6 +44,15 @@ chaves.omawin` brings you the latest.
   would get every thread. A 192G disk joins the list. Those warnings are in
   your theme's yellow.
 
+### Fixed
+
+- **A Windows that never answers on RDP no longer looks like it's still
+  booting.** If Remote Desktop doesn't answer within 2½ minutes of the VM
+  coming up (or of a reboot), the glyph stops breathing and turns your
+  theme's yellow, and the card says Windows is running but not answering,
+  and why that may be: Remote Desktop off in Windows, its firewall, or
+  another port. It turns ready the moment RDP answers.
+
 ## 0.2.4 — 2026-10-04
 
 ### Fixed

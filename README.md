@@ -81,6 +81,8 @@ o.bind("SUPER + ALT + W", "Windows VM", "omarchy-shell chaves.omawin primary")
   how much of it Windows has really written.
 - **Starting / Booting**: the VM is coming up. The web viewer already works
   while Windows boots, which is where you watch a first install.
+  If Windows still hasn't answered on RDP after 2½ minutes, the glyph stops
+  breathing and turns yellow, and the card says what may be blocking it.
 - **Ready**: Connect opens the Windows window. Pause, Stop, Web viewer. CPU
   shows how busy Windows is right now.
 - **Paused**: frozen in memory, using no CPU but still holding all of its

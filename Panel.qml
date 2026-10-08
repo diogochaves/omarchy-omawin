@@ -78,7 +78,10 @@ Panel {
   // retry, which is exactly what State.allowedActions does with `base`.
   readonly property string stateFace: root.failed ? service.base : root.vmState
   readonly property bool inTransit: vmState === "starting" || vmState === "stopping"
-  readonly property bool pulsing: root.inTransit || vmState === "booting"
+  // A boot that has outrun State.BOOT_PATIENCE_MS stops breathing: RDP may
+  // never answer, and a glyph that pulses for the VM's whole uptime is both a
+  // lie and a bar repaint 12.5 times a second.
+  readonly property bool pulsing: root.inTransit || (vmState === "booting" && !service.bootOverdue)
   // The console convention (omarchy-console DESIGN.md §6), read by its rail.
   readonly property string consoleState: State.consoleState(vmState)
   readonly property bool consoleAwake: consoleState !== ""
@@ -108,9 +111,11 @@ Panel {
   // The glyph's colour per the mockup's "Bar glyph per state" row: dimmed
   // with nothing installed, the dim foreground when the VM is off or going
   // off, full foreground while it is alive, urgent when something failed
-  // (`bar.urgent`, the colour the Updates widget uses).
+  // (`bar.urgent`, the colour the Updates widget uses). A boot that RDP has
+  // not answered for too long holds still in the warning colour.
   readonly property color glyphColor: {
     if (root.failed) return root.urgentColor
+    if (service.bootOverdue) return root.warnColor
     if (vmState === "stopped" || vmState === "stopping") return Qt.darker(barForeground, 1.4)
     return barForeground
   }
@@ -436,18 +441,27 @@ Panel {
     function status(): string {
       return service.state + " " + service.sampleLine + " | " + service.tooltip
     }
-    // Debug only: stand a sampler line (an RDP verdict, "ok" or "no", and a
-    // pending transient, "start" or "stop") in for the real ones, so every
-    // face of the card can be looked at with the VM switched off. An empty
-    // line hands the widget back to the sampler. See the IPC table in
+    // Debug only: stand a sampler line (an RDP verdict, "ok", "no" or
+    // "overdue", and a pending transient, "start" or "stop") in for the real
+    // ones, so every face of the card can be looked at with the VM switched
+    // off. "overdue" is "no" on a boot already State.BOOT_PATIENCE_MS old. An
+    // empty line hands the widget back to the sampler. See the IPC table in
     // docs/developing.md.
     function mock(line: string, probe: string, action: string): string {
+      var overdue = String(probe) === "overdue"
       service.mockLine = String(line).slice(0, 512)
-      service.mockProbe = String(probe)
+      service.mockProbe = overdue ? "no" : String(probe)
       // Handing back to the sampler also drops the mocked transient, so the
       // card does not sit in "starting" for 150 s after `mock "" "" ""`.
       if (String(line) === "") service.clearDesired()
       service.refresh()
+      // Every mocked boot starts its own clock, so "no" after "overdue"
+      // breathes again rather than inheriting the late one.
+      // QEMU has been up at least that long, so the card's Since agrees.
+      if (service.state === "booting") {
+        service.bootingSince = Date.now() - (overdue ? State.BOOT_PATIENCE_MS : 0)
+        service.pidSince = Math.min(service.pidSince, service.bootingSince)
+      }
       if (String(action) !== "") service.setDesired(String(action))
       return service.state + " " + service.sampleLine
     }
@@ -652,7 +666,8 @@ Panel {
           id: progress
           // starting, booting and stopping all show it, as the mockup does:
           // every one of them is a wait with nothing to measure.
-          visible: root.live && (root.inTransit || root.vmState === "booting")
+          // Not once a boot is overdue: by then nothing is visibly on its way.
+          visible: root.live && (root.inTransit || (root.vmState === "booting" && !service.bootOverdue))
           width: parent.width
           implicitHeight: Style.space(8)
           // The fill slides in from beyond both ends; without the clip it
@@ -709,8 +724,10 @@ Panel {
           visible: root.live && text !== ""
           textFormat: Text.PlainText
           wrapMode: Text.WordWrap
-          // The stopped card's only paragraph is the Docker warning.
-          color: root.vmState === "stopped" ? root.urgentColor : root.dim
+          // The stopped card's only paragraph is the Docker warning; an
+          // overdue boot's is a caution, in the warning colour.
+          color: root.vmState === "stopped" ? root.urgentColor
+            : service.bootOverdue ? root.warnColor : root.dim
           font.family: root.family
           font.pixelSize: Style.font.caption
           text: {
@@ -718,6 +735,10 @@ Panel {
               return "No Windows VM on this machine. The installer asks for RAM, cores, disk size and a login, then downloads Windows 11 (10–15 min). It runs in a floating terminal."
             if (root.vmState === "starting")
               return "Bringing the container up. Omarchy may ask for authorisation."
+            // Past State.BOOT_PATIENCE_MS: why RDP may never answer.
+            if (service.bootOverdue)
+              return service.bootOverdueNote + (service.stopHeldByLauncher
+                ? " The launcher still holds the VM, so Stop waits for it." : "")
             if (root.vmState === "booting" && service.stopHeldByLauncher)
               return "The launcher holds the VM while Windows boots; Stop unlocks once it answers on RDP."
             // Pause is mistaken for a way to free memory: say it isn't.

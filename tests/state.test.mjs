@@ -257,6 +257,34 @@ test('probeInterval only probes while it can learn something', () => {
     assert.equal(State.probeInterval(state), 0, state)
 })
 
+test('bootOverdue: only a boot older than BOOT_PATIENCE_MS', () => {
+  const since = 1000000
+  const limit = State.BOOT_PATIENCE_MS
+  assert.equal(limit, 150000)
+  // Under the limit, at it, and past it.
+  assert.equal(State.bootOverdue('booting', since, since + limit - 1), false)
+  assert.equal(State.bootOverdue('booting', since, since + limit), true)
+  assert.equal(State.bootOverdue('booting', since, since + 3 * 3600000), true)
+  // No clock started: never overdue.
+  for (const none of [0, null, undefined, NaN])
+    assert.equal(State.bootOverdue('booting', none, since + 2 * limit), false, String(none))
+  // Only "booting" waits on RDP.
+  for (const state of ['not-installed', 'stopped', 'starting', 'ready', 'paused', 'stopping', 'failed'])
+    assert.equal(State.bootOverdue(state, since, since + 2 * limit), false, state)
+})
+
+test('bootOverdueNote: whole minutes and the likely causes, only when overdue', () => {
+  const since = 1000000
+  assert.equal(State.bootOverdueNote('booting', since, since + 149000), '')
+  assert.equal(State.bootOverdueNote('ready', since, since + 600000), '')
+  const note = State.bootOverdueNote('booting', since, since + 150000)
+  assert.match(note, /^Windows is running but hasn't answered on RDP for 2 min\. /)
+  assert.match(note, /turned off in Windows/)
+  assert.match(note, /firewall/)
+  assert.match(note, /another port/)
+  assert.match(State.bootOverdueNote('booting', since, since + 47 * 60000 + 59000), / for 47 min\. /)
+})
+
 test('sampleInterval backs off only when nothing is installed', () => {
   assert.equal(State.sampleInterval('not-installed'), 30000)
   for (const state of ['stopped', 'starting', 'booting', 'ready', 'paused', 'stopping', 'failed'])
