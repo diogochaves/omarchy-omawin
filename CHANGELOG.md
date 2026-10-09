@@ -5,6 +5,11 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Fixed
+
+- **The card has its colours again on Qt 6.12.** Qt 6.12 added its own `Color`
+  type, which hid the shell's palette, so text and accents came out undefined.
+
 ## 0.2.4 — 2026-10-04
 
 ### Fixed
