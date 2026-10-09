@@ -5,6 +5,8 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+## 0.3.0 — 2026-10-09
+
 ### Added
 
 - **Back up VM… keeps a copy of Windows before you change it.** In Settings,
