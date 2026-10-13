@@ -5,6 +5,12 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Fixed
+
+- **The bar's Windows mark keeps its size while the VM is paused.** On newer
+  Omarchy, which fits every bar icon to one size, the pause badge used to
+  shrink the mark and move it up-left until you resumed.
+
 ## 0.3.0 — 2026-10-09
 
 ### Added

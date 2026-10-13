@@ -494,16 +494,31 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     tooltipText: service.tooltip
+    // The glyph alone: the shell scales everything in iconComponent to one
+    // icon size (omarchy#15065), so a badge in there would shrink the mark
+    // whenever it shows.
     iconComponent: Component {
       Item {
         WinMark {
           anchors.centerIn: parent
           markSize: Style.bar.iconFont
           markColor: root.glyphColor
-          paused: root.vmState === "paused"
           opacity: root.glyphOpacity * (root.pulsing ? root.pulsePhase : 1.0)
         }
       }
+    }
+
+    // The pause badge on the button instead, at the mark's bottom-right
+    // corner. iconSize is the shell's painted icon size; older shells have
+    // none and paint the glyph at about its font size.
+    PauseBadge {
+      readonly property real mark: Style.bar.iconSize !== undefined ? Style.bar.iconSize : Style.bar.iconFont
+      visible: root.vmState === "paused"
+      x: Math.round(button.width / 2 + mark / 2 - width * 0.75)
+      y: Math.round(button.height / 2 + mark / 2 - height * 0.6)
+      markSize: Style.bar.iconFont
+      markColor: root.glyphColor
+      opacity: root.glyphOpacity * (root.pulsing ? root.pulsePhase : 1.0)
     }
     // Left opens the card; middle is the one-click shortcut from the mockup's
     // interaction table (Start when stopped, Connect when ready, nothing
@@ -2167,18 +2182,26 @@ Panel {
       font.pixelSize: mark.markSize
     }
 
-    Text {
+    PauseBadge {
       visible: mark.paused
       anchors.right: parent.right
       anchors.bottom: parent.bottom
       anchors.rightMargin: -mark.markSize * 0.18
       anchors.bottomMargin: -mark.markSize * 0.1
-      textFormat: Text.PlainText
-      text: root.pauseGlyph
-      color: Qt.darker(mark.markColor, 1.4)
-      font.family: root.family
-      font.pixelSize: Math.max(6, mark.markSize * 0.5)
+      markSize: mark.markSize
+      markColor: mark.markColor
     }
+  }
+
+  component PauseBadge: Text {
+    property real markSize: Style.font.icon
+    property color markColor: root.fg
+
+    textFormat: Text.PlainText
+    text: root.pauseGlyph
+    color: Qt.darker(markColor, 1.4)
+    font.family: root.family
+    font.pixelSize: Math.max(6, markSize * 0.5)
   }
 
   // The way into the Login face, always the last button of a card's bottom
