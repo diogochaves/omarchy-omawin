@@ -17,6 +17,13 @@ chaves.omawin` brings you the latest.
   line on what it does; each opens its own face, and Back returns to
   Settings. It used to be one long page of four sections.
 
+- **Each state shows only its own buttons.** Stopped: Start, Shared folder,
+  Tune…. Starting and booting: Web viewer and Copy password, for Windows'
+  sign-in screen in the web viewer, and Stop. Ready: Connect, Pause, Stop,
+  Shared folder. Paused: Resume and Stop. Login… left the card, since Connect
+  signs in by itself: it is a row in Settings, and so is the web viewer of a
+  ready VM.
+
 ## 0.3.3 — 2026-10-20
 
 ### Changed

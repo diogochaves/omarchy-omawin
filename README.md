@@ -77,22 +77,23 @@ o.bind("SUPER + ALT + W", "Windows VM", "omarchy-shell chaves.omawin primary")
 
 <p><img src="docs/card-states.png" alt="The card in each state: stopped, starting, booting, ready, paused, failed" width="800"></p>
 
-- **Stopped**: Start, and Tune the shape the next start will use. Disk says
-  how much of it Windows has really written.
+- **Stopped**: Start, Shared folder, and Tune the shape the next start will
+  use. Disk says how much of it Windows has really written.
 - **Starting / Booting**: the VM is coming up. The web viewer already works
-  while Windows boots, which is where you watch a first install.
+  while Windows boots, which is where you watch a first install; if Windows
+  asks for its password there, **Copy password** has it.
   If Windows still hasn't answered on RDP after 2½ minutes, the glyph stops
   breathing and turns yellow, and the card says what may be blocking it.
-- **Ready**: Connect opens the Windows window. Pause, Stop, Web viewer. CPU
-  shows how busy Windows is right now.
+- **Ready**: Connect opens the Windows window, signed in. Pause, Stop,
+  Shared folder. CPU shows how busy Windows is right now.
 - **Paused**: frozen in memory, using no CPU but still holding all of its
   RAM. Resume picks up where it left off and reopens the window; only Stop
   gives the RAM back.
 - **Failed**: what went wrong, and what to try. The buttons underneath still
   work, so you can retry.
 
-Every card has **Shared folder** (`~/Windows`, a network drive inside
-Windows) and **Login…**.
+**Shared folder** is `~/Windows`, a network drive inside Windows. The rest
+(Login, the web viewer of a ready VM, Back up) is in Settings.
 
 <p><img src="docs/faces.png" alt="The Tune, Login and Settings faces" width="800"></p>
 

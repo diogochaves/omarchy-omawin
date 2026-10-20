@@ -969,6 +969,12 @@ Panel {
           foreground: root.fg
         }
 
+        // Each state shows only what it is used for: its one main action in
+        // the accent, and the few it goes with. The rest (Tune, Login, Back
+        // up, Web viewer on a ready VM) are rows in Settings. Connect signs in
+        // by itself, so the login is only asked for by Windows' own sign-in
+        // screen, in the web viewer: Copy password sits beside it while
+        // Windows starts.
         Column {
           id: liveActions
           visible: root.live
@@ -992,13 +998,14 @@ Panel {
             }
           }
 
-          // stopped (and the failed card that sits on top of it). Tune is
-          // offered here and nowhere else: the compose it writes is read at the
-          // next `docker compose up`.
+          // stopped (and the failed card that sits on top of it), and
+          // stopping, which is on its way there: Start and Tune wake when it
+          // lands. Tune is offered on the card and in Settings, and nowhere
+          // while running: the compose it writes is read at the next start.
           ActionRow {
             id: stoppedRow
-            visible: root.stateFace === "stopped"
-            cells: 2
+            visible: root.stateFace === "stopped" || root.stateFace === "stopping"
+            cells: 1
             ActionButton {
               width: stoppedRow.cellWidth
               iconText: root.playGlyph
@@ -1006,13 +1013,6 @@ Panel {
               primary: true
               allowed: root.can("start")
               onClicked: service.start()
-            }
-            ActionButton {
-              width: stoppedRow.cellWidth
-              iconText: root.tuneGlyph
-              text: "Tune…"
-              allowed: root.can("tune")
-              onClicked: root.openFace("tune")
             }
           }
 
@@ -1027,58 +1027,45 @@ Panel {
               allowed: root.can("shared")
               onClicked: service.openShared()
             }
-            LoginButton { width: stoppedRow2.cellWidth }
+            ActionButton {
+              width: stoppedRow2.cellWidth
+              iconText: root.tuneGlyph
+              text: "Tune…"
+              allowed: root.can("tune")
+              onClicked: root.openFace("tune")
+            }
           }
 
-          // starting / stopping — everything but the folder is dead
+          // starting and booting: nothing to press until RDP answers, but
+          // the web viewer shows Windows coming up, and if Windows asks for
+          // its password there, Copy password has it.
           ActionRow {
-            id: transientRow
-            visible: root.stateFace === "starting" || root.stateFace === "stopping"
+            id: bootRow
+            visible: root.stateFace === "starting" || root.stateFace === "booting"
             cells: 2
             ActionButton {
-              width: transientRow.cellWidth
-              iconText: root.playGlyph
-              text: "Start"
-              allowed: root.can("start")
-              onClicked: service.start()
-            }
-            ActionButton {
-              width: transientRow.cellWidth
+              width: bootRow.cellWidth
               iconText: root.globeGlyph
               text: "Web viewer"
               allowed: root.can("web")
               onClicked: service.openWeb()
             }
+            ActionButton {
+              width: bootRow.cellWidth
+              iconText: service.copied ? root.checkGlyph : root.copyGlyph
+              text: service.copied ? "Copied · 30 s" : "Copy password"
+              tooltipText: "For Windows' sign-in screen in the web viewer. Cleared from the clipboard after 30 s."
+              allowed: service.loginText !== "—"
+              onClicked: service.copyPassword()
+            }
           }
 
           ActionRow {
-            id: transientRow2
-            visible: transientRow.visible
-            cells: 2
+            id: bootRow2
+            visible: bootRow.visible
+            cells: 1
             ActionButton {
-              width: transientRow2.cellWidth
-              iconText: root.folderGlyph
-              text: "Shared folder"
-              allowed: root.can("shared")
-              onClicked: service.openShared()
-            }
-            LoginButton { width: transientRow2.cellWidth }
-          }
-
-          // booting
-          ActionRow {
-            id: bootingRow
-            visible: root.stateFace === "booting"
-            cells: 2
-            ActionButton {
-              width: bootingRow.cellWidth
-              iconText: root.linkGlyph
-              text: "Connect"
-              allowed: root.can("connect")
-              onClicked: service.connect()
-            }
-            ActionButton {
-              width: bootingRow.cellWidth
+              width: bootRow2.cellWidth
               iconText: root.stopGlyph
               text: "Stop"
               allowed: root.can("stop")
@@ -1086,11 +1073,11 @@ Panel {
             }
           }
 
-          // ready: Connect, Pause and Stop; its second row is shared with booting
+          // ready
           ActionRow {
             id: readyRow
             visible: root.stateFace === "ready"
-            cells: 3
+            cells: 1
             ActionButton {
               width: readyRow.cellWidth
               iconText: root.linkGlyph
@@ -1099,8 +1086,14 @@ Panel {
               allowed: root.can("connect")
               onClicked: service.connect()
             }
+          }
+
+          ActionRow {
+            id: readyRow2
+            visible: readyRow.visible
+            cells: 3
             ActionButton {
-              width: readyRow.cellWidth
+              width: readyRow2.cellWidth
               iconText: root.pauseGlyph
               text: "Pause"
               tooltipText: "Freeze Windows: frees the CPU, keeps the RAM"
@@ -1108,11 +1101,18 @@ Panel {
               onClicked: service.pause()
             }
             ActionButton {
-              width: readyRow.cellWidth
+              width: readyRow2.cellWidth
               iconText: root.stopGlyph
               text: "Stop"
               allowed: root.can("stop")
               onClicked: service.stop()
+            }
+            ActionButton {
+              width: readyRow2.cellWidth
+              iconText: root.folderGlyph
+              text: "Shared folder"
+              allowed: root.can("shared")
+              onClicked: service.openShared()
             }
           }
 
@@ -1136,42 +1136,6 @@ Panel {
               allowed: root.can("stop")
               onClicked: service.stop()
             }
-          }
-
-          ActionRow {
-            id: pausedRow2
-            visible: pausedRow.visible
-            cells: 2
-            ActionButton {
-              width: pausedRow2.cellWidth
-              iconText: root.folderGlyph
-              text: "Shared folder"
-              allowed: root.can("shared")
-              onClicked: service.openShared()
-            }
-            LoginButton { width: pausedRow2.cellWidth }
-          }
-
-          // booting and ready share the second row
-          ActionRow {
-            id: liveRow2
-            visible: bootingRow.visible || readyRow.visible
-            cells: 3
-            ActionButton {
-              width: liveRow2.cellWidth
-              iconText: root.globeGlyph
-              text: "Web viewer"
-              allowed: root.can("web")
-              onClicked: service.openWeb()
-            }
-            ActionButton {
-              width: liveRow2.cellWidth
-              iconText: root.folderGlyph
-              text: "Shared folder"
-              allowed: root.can("shared")
-              onClicked: service.openShared()
-            }
-            LoginButton { width: liveRow2.cellWidth }
           }
         }
 
@@ -1566,6 +1530,15 @@ Panel {
             tip: "The account Connect signs in with. Show, copy or change it."
             allowed: service.loginText !== "—"
             onActivated: root.openFace("login")
+          }
+
+          SettingsRow {
+            visible: root.vmState === "ready" || root.vmState === "booting" || root.vmState === "starting"
+            title: "Web viewer"
+            value: "127.0.0.1:8006"
+            tip: "Windows' screen in the browser, for when Connect can't reach it."
+            allowed: root.can("web")
+            onActivated: service.openWeb()
           }
 
           SettingsRow {
@@ -2205,17 +2178,6 @@ Panel {
     color: Qt.darker(markColor, 1.4)
     font.family: root.family
     font.pixelSize: Math.max(6, markSize * 0.5)
-  }
-
-  // The way into the Login face, always the last button of a card's bottom
-  // row: the web viewer asks for this login while the VM boots or runs, so it
-  // has to be reachable from every state, not only the stopped one. It only
-  // opens a face and reads a file the user owns, so `busy` does not grey it.
-  component LoginButton: ActionButton {
-    iconText: root.keyGlyph
-    text: "Login…"
-    allowed: service.loginText !== "—"
-    onClicked: root.openFace("login")
   }
 
   // One line of Settings: what it is, its current value and a ›, and below
