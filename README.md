@@ -95,7 +95,7 @@ o.bind("SUPER + ALT + W", "Windows VM", "omarchy-shell chaves.omawin primary")
 **Shared folder** is `~/Windows`, a network drive inside Windows. The rest
 (Login, the web viewer of a ready VM, Back up) is in Settings.
 
-<p><img src="docs/faces.png" alt="The Tune, Login and Settings faces" width="800"></p>
+<p><img src="docs/faces.png" alt="The Settings, Backups and Restore faces" width="800"></p>
 
 - **Tune** (VM off) sets cores, RAM and disk for the next start. The disk can
   only grow; after it does, extend C: in Windows' Disk Management and the card
