@@ -18,14 +18,15 @@ import "lib/State.js" as State
 // shell's own tokens throughout, so the card re-skins with the theme exactly
 // like the first-party panels.
 //
-// On top of those eight states there are four sub-faces, `face`: Tune (the
-// VM's shape), Login (the stored RDP credentials), Update login and
-// Settings (the optional polkit rule). Each replaces the body of the same card
-// and comes back with ‹ Back at the top right (or Esc), where the gear that
-// opens Settings sits on the live faces.
-// The state machine keeps running underneath, so Tune and Update password —
-// the two that rewrite the compose, which is only read at the next start —
-// close themselves the moment the VM stops being stopped.
+// On top of those eight states there are sub-faces, `face`: Settings, a list
+// of rows, and the faces they open: Tune (the VM's shape), Login (the stored
+// RDP credentials, with Change… opening its fields in place, the
+// `updatePassword` face), Back up, Passwordless actions, Key binding and
+// Remove. Each replaces the body of the same card and comes back with ‹ Back
+// at the top right (or Esc), where the gear that opens Settings sits on the
+// live faces. The state machine keeps running underneath, so the faces that
+// rewrite the compose or touch the disk close themselves the moment the VM
+// stops being stopped.
 Panel {
   id: root
   moduleName: "chaves.omawin"
@@ -604,7 +605,7 @@ Panel {
           title: root.live ? "Windows VM"
             : root.face === "tune" ? "Tune"
             : root.face === "login" ? "Login"
-            : root.face === "updatePassword" ? "Update login"
+            : root.face === "updatePassword" ? "Login"
             : root.face === "remove" ? "Remove VM"
             : root.face === "backup" ? "Back up VM"
             : root.face === "rule" ? "Passwordless actions"
@@ -612,6 +613,7 @@ Panel {
             : "Settings"
           meta: root.live ? service.label
             : root.face === "login" ? "Windows VM · RDP and web viewer"
+            : root.face === "updatePassword" ? "Windows VM · change the login"
             : root.face === "settings" ? "Windows VM · Omawin " + root.pluginVersion
             : root.face === "rule" || root.face === "key" ? "Windows VM · this desktop"
             : "Windows VM · " + service.label.toLowerCase()
@@ -1377,24 +1379,26 @@ Panel {
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: root.stoppedFace
-              ? "Changed the password inside Windows, or want another account? Save it here so Connect keeps working."
+              ? "Changed the password inside Windows, or want another account? Change it here so Connect keeps working."
               : "Changed the password inside Windows, or want another account? Stop the VM first: saving it here also rewrites the compose, which is only read at the next start."
           }
 
+          // Change… opens the fields on this same face (the `updatePassword`
+          // face keeps its name for the IPC and the guards that hold it).
           ActionRow {
             id: loginRow2
             cells: 1
             ActionButton {
               width: loginRow2.cellWidth
-              iconText: root.keyGlyph
-              text: "Update login…"
+              iconText: root.editGlyph
+              text: "Change…"
               allowed: !service.busy && root.stoppedFace
               onClicked: root.openFace("updatePassword")
             }
           }
         }
 
-        // ========================= Update login ============================
+        // ===================== Login: Change… (in place) ====================
         // Only what this machine sends when it connects: which existing
         // Windows account, and its password. Accounts are made and changed
         // inside Windows; this is where the result is written down, into the
@@ -1485,11 +1489,19 @@ Panel {
 
           ActionRow {
             id: updateRow
-            cells: 1
+            cells: 2
+            ActionButton {
+              width: updateRow.cellWidth
+              iconText: root.backGlyph
+              text: "Cancel"
+              allowed: !root.faceWriting
+              onClicked: root.goBack()
+            }
             ActionButton {
               width: updateRow.cellWidth
               iconText: root.checkGlyph
               text: "Save…"
+              primary: true
               allowed: root.canSave
               onClicked: service.saveLogin(newUsername.text, newPassword.text)
             }
@@ -1714,7 +1726,7 @@ Panel {
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: service.rulePresent
-              ? "Start, Stop, Pause and Resume run without a dialog. Tune's Apply and Update login still ask: rewriting the VM's configuration stays behind authorisation on purpose, and it is rare."
+              ? "Start, Stop, Pause and Resume run without a dialog. Tune's Apply and Login's Save still ask: rewriting the VM's configuration stays behind authorisation on purpose, and it is rare."
               : "Installs /etc/polkit-1/rules.d/49-omawin.rules. Opens a terminal; sudo asks for your password once and the file is shown before it is written."
           }
 

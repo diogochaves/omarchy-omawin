@@ -24,6 +24,10 @@ chaves.omawin` brings you the latest.
   signs in by itself: it is a row in Settings, and so is the web viewer of a
   ready VM.
 
+- **Login is one face.** Change… opens the username and password fields
+  on it, with Cancel and Save…, where Update login… used to open a face of
+  its own.
+
 ## 0.3.3 — 2026-10-20
 
 ### Changed
