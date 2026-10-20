@@ -5,6 +5,15 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Added
+
+- **Clean shutdown.** Omarchy gives every service 5 seconds to stop when you
+  reboot or power off, so Windows was cut off halfway through shutting down,
+  as if the power went, and a paused VM was simply killed. Settings › Clean
+  shutdown installs a small system unit that makes the reboot wait for
+  Windows (up to 2 minutes) and wakes a paused VM first. Like Passwordless
+  actions, it opens a terminal and shows the file before writing it.
+
 ## 0.4.0 — 2026-10-20
 
 ### Changed

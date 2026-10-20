@@ -439,3 +439,71 @@ ls victim | wc -l
   // they have outside: written as them, the copy is theirs.
   assert.equal(result.stdout, `copy ${uid} 644\nsame\nvictim 0 755\n0\n`, result.stderr)
 })
+
+// setup shutdown: the clean-shutdown unit, into a throwaway unit directory,
+// with a fake systemctl that logs what it was asked and answers is-active
+// docker.service from DOCKER_ACTIVE.
+function unitBox(t, { dockerActive = true } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omawin-unit-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const units = path.join(dir, 'system')
+  const log = path.join(dir, 'systemctl.log')
+  const fake = path.join(dir, 'systemctl')
+  fs.writeFileSync(fake, `#!/bin/bash
+printf '%s\\n' "$*" >>"${log}"
+case "$*" in
+  "-q is-active docker.service") [[ ${dockerActive ? 1 : 0} == 1 ]] ;;
+  "is-enabled omawin-vm-shutdown.service") echo enabled ;;
+  "is-active omawin-vm-shutdown.service") echo active ;;
+esac
+`, { mode: 0o755 })
+  const env = { SYSTEMD_UNIT_DIR: units, SETUP_SYSTEMCTL: fake }
+  const calls = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : []
+  return { units, env, calls }
+}
+
+const UNIT = 'omawin-vm-shutdown.service'
+
+test('shutdown installs the unit as shown, enables it and arms it while Docker runs', t => {
+  const { units, env, calls } = unitBox(t)
+  const result = setup(['shutdown', '--yes'], { env })
+  assert.equal(result.status, 0, result.out)
+  const installed = fs.readFileSync(path.join(units, UNIT), 'utf8')
+  assert.equal(installed, fs.readFileSync(path.join(root, 'systemd', UNIT), 'utf8'))
+  assert.ok(result.out.includes('ExecStop=-/usr/bin/docker stop --time 120 omarchy-windows'), 'the unit is shown')
+  assert.deepEqual(calls(), ['daemon-reload', `enable ${UNIT}`, '-q is-active docker.service', `start ${UNIT}`])
+})
+
+test('shutdown with Docker down is enabled but not started', t => {
+  const { env, calls } = unitBox(t, { dockerActive: false })
+  assert.equal(setup(['shutdown', '--yes'], { env }).status, 0)
+  assert.deepEqual(calls(), ['daemon-reload', `enable ${UNIT}`, '-q is-active docker.service'])
+})
+
+test('shutdown without --yes and without a terminal installs nothing', t => {
+  const { units, env, calls } = unitBox(t)
+  const result = setup(['shutdown'], { env })
+  assert.equal(result.status, 1)
+  assert.match(result.out, /no terminal to ask on/)
+  assert.equal(fs.existsSync(path.join(units, UNIT)), false)
+  assert.deepEqual(calls(), [])
+})
+
+// Stopping the unit shuts Windows down, so --remove never does.
+test('shutdown --remove disables and deletes it, never stops it', t => {
+  const { units, env, calls } = unitBox(t)
+  assert.equal(setup(['shutdown', '--yes'], { env }).status, 0)
+  const before = calls().length
+  const result = setup(['shutdown', '--remove'], { env })
+  assert.equal(result.status, 0, result.out)
+  assert.equal(fs.existsSync(path.join(units, UNIT)), false)
+  assert.deepEqual(calls().slice(before), [`disable ${UNIT}`, 'daemon-reload'])
+  assert.match(setup(['shutdown', '--remove'], { env }).out, /nothing to remove/)
+})
+
+test('shutdown --status says whether it is there', t => {
+  const { env } = unitBox(t)
+  assert.match(setup(['shutdown', '--status'], { env }).out, /^absent /)
+  setup(['shutdown', '--yes'], { env })
+  assert.match(setup(['shutdown', '--status'], { env }).out, /^present .*\(enabled, active\)/)
+})

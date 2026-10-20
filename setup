@@ -1,5 +1,6 @@
 #!/bin/bash
-# Installs chaves.omawin's polkit rule, the one privileged part of the plugin.
+# Installs chaves.omawin's two optional privileged parts: the polkit rule and
+# the clean-shutdown unit.
 #
 #   sudo ./setup polkit [--user NAME]   show the rendered 49-omawin.rules for
 #                                       NAME (default $SUDO_USER), ask, and
@@ -12,15 +13,29 @@
 #                                       has to match on this box
 #   sudo ./setup polkit --status        which of the two rules are installed
 #   sudo ./setup polkit --remove        remove both
+#   sudo ./setup shutdown               show omawin-vm-shutdown.service, ask,
+#                                       install and enable it. Idempotent.
+#                                       --yes skips the question.
+#   sudo ./setup shutdown --status      whether it is installed and enabled
+#   sudo ./setup shutdown --remove      disable and remove it
 #   ./setup -h                          this text
 #
 # Both rules are shown in full before anything is written, so what root
 # installs is what was read on screen, not whatever a file in the checkout
 # holds at that moment.
 #
-# Root is needed only because /etc/polkit-1/rules.d is root:polkitd 0750: the
-# rules cannot even be listed as the user. Nothing else here is privileged,
-# nothing is started or stopped, and the VM is never touched.
+# For the rule, root is needed only because /etc/polkit-1/rules.d is
+# root:polkitd 0750: the rules cannot even be listed as the user. Nothing is
+# started or stopped, and the VM is never touched.
+#
+# The unit goes to /etc/systemd/system, enabled as wanted by docker.service,
+# and is started (its start does nothing) if Docker runs. It is ordered after
+# docker.service, so systemd stops it first: its stop resumes a paused VM and
+# stops it with `docker stop --time 120`, before Omarchy's 5 s limit can kill
+# it with Docker. Removing it never stops it: that would shut Windows down. It
+# stays armed until the next reboot, which is harmless. Unlike the rules
+# directory, /etc/systemd/system is world-readable, so the widget asks
+# `systemctl is-enabled` and needs no copy.
 #
 # polkitd watches the rules directory and reloads on its own (inotify), so no
 # daemon is restarted here — the rule is live the moment install(1) returns.
@@ -51,6 +66,8 @@
 #   OMAWIN_STATE_DIR      where the user-owned copy goes (default the target
 #                         user's ~/.local/state/omawin)
 #   SETUP_TARGET_HOME     that user's home, when getent should not be asked
+#   SYSTEMD_UNIT_DIR      unit directory   (default /etc/systemd/system)
+#   SETUP_SYSTEMCTL       systemctl to run (default /usr/bin/systemctl)
 
 set -euo pipefail
 export LC_ALL=C
@@ -65,8 +82,14 @@ probe_src=$repo_dir/polkit/49-omawin-probe.rules.in
 rule_dest=$rules_dir/$rule_name
 probe_dest=$rules_dir/$probe_name
 
+unit_dir=${SYSTEMD_UNIT_DIR:-/etc/systemd/system}
+unit_name=omawin-vm-shutdown.service
+unit_src=$repo_dir/systemd/$unit_name
+unit_dest=$unit_dir/$unit_name
+systemctl=${SETUP_SYSTEMCTL:-/usr/bin/systemctl}
+
 usage() {
-  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 die() {
@@ -278,13 +301,64 @@ polkit_remove() {
   ((removed)) || echo "nothing to remove: neither rule is installed in $rules_dir"
 }
 
+# The unit, shown in full and asked about the way the rule is; it has no
+# placeholder, so what is installed is that same file.
+shutdown_install() {
+  echo "About to install this file, as root, at $unit_dest:"
+  echo
+  sed 's/^/    /' "$unit_src"
+  echo
+  if ((assume_yes)); then
+    :
+  elif [[ -t 0 ]]; then
+    local answer
+    read -r -p "Install and enable it? [y/N] " answer
+    [[ $answer == [yY] || $answer == [yY][eE][sS] ]] || die "not installed"
+  else
+    die "no terminal to ask on: re-run with --yes after reading the unit above"
+  fi
+  install_file "$unit_src" "$unit_dest"
+  "$systemctl" daemon-reload
+  "$systemctl" enable "$unit_name"
+  # Its start runs /usr/bin/true: armed now, without waiting for a reboot.
+  if "$systemctl" -q is-active docker.service; then "$systemctl" start "$unit_name"; fi
+  cat <<EOF
+installed $unit_dest, enabled for docker.service
+
+From now on a reboot or power-off waits for Windows to shut down (up to
+2 minutes), and wakes a paused VM first. Check it:
+
+  systemctl status $unit_name
+EOF
+}
+
+shutdown_status() {
+  if [[ -f $unit_dest ]]; then
+    echo "present $unit_dest ($("$systemctl" is-enabled "$unit_name" 2>/dev/null || echo disabled), $("$systemctl" is-active "$unit_name" 2>/dev/null || echo inactive))"
+  else
+    echo "absent  $unit_dest"
+  fi
+}
+
+# Disabled and deleted, never stopped: its stop shuts Windows down.
+shutdown_remove() {
+  if [[ ! -e $unit_dest ]]; then
+    echo "nothing to remove: $unit_dest is not installed"
+    return 0
+  fi
+  "$systemctl" disable "$unit_name" || true
+  rm -f "$unit_dest"
+  "$systemctl" daemon-reload
+  echo "removed $unit_dest (still armed until the next reboot, which only shuts Windows down cleanly once more)"
+}
+
 main() {
   local command=${1-}
   [[ -n $command ]] || { usage >&2; exit 2; }
   shift
   case $command in
     -h | --help) usage; exit 0 ;;
-    polkit) ;;
+    polkit | shutdown) ;;
     *) die "unknown command: $command (try ./setup -h)" ;;
   esac
 
@@ -308,7 +382,16 @@ main() {
     shift
   done
 
-  require_root "polkit"
+  require_root "$command"
+  if [[ $command == shutdown ]]; then
+    case $mode in
+      install) shutdown_install ;;
+      status) shutdown_status ;;
+      remove) shutdown_remove ;;
+      *) die "shutdown takes --status, --remove or --yes" ;;
+    esac
+    return
+  fi
   case $mode in
     install) polkit_install "$user" ;;
     probe) polkit_probe "$user" ;;

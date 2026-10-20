@@ -1,0 +1,23 @@
+# Installed by chaves.omawin's setup (sudo ./setup shutdown).
+#
+# Omarchy gives every system service 5 seconds to stop
+# (DefaultTimeoutStopSec=5s), Docker included, so a reboot or power-off kills
+# the Windows VM halfway through its shutdown. This unit runs alongside
+# docker.service and, being ordered after it, is stopped before it: it
+# resumes a paused VM and asks Windows to shut down, waiting up to 2 minutes.
+# A VM that is off, or not installed, costs nothing.
+[Unit]
+Description=Shut the Windows VM down cleanly before Docker stops (Omawin)
+BindsTo=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/true
+ExecStop=-/usr/bin/docker unpause omarchy-windows
+ExecStop=-/usr/bin/docker stop --time 120 omarchy-windows
+TimeoutStopSec=150
+
+[Install]
+WantedBy=docker.service

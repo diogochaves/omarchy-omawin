@@ -158,7 +158,7 @@ QtObject {
     // The three configuration actions count too: Apply, Save and the terminal
     // that installs the polkit rule all grey every button out while they run,
     // so a start cannot be stacked on top of a compose rewrite.
-    || tuneProc.running || saveProc.running || polkitProc.running
+    || tuneProc.running || saveProc.running || polkitProc.running || shutdownSetupProc.running
     // A backup reads data.img for minutes: Start must wait for it. So must
     // a restore, which swaps the disk Start would boot.
     || backupProc.running || restoreProc.running
@@ -326,6 +326,7 @@ QtObject {
     revealTimer.running = false
     clipboardTimer.running = false
     ruleTimer.running = false
+    shutdownTimer.running = false
     sampleProc.running = false
     probeProc.running = false
     unitProc.running = false
@@ -1615,6 +1616,71 @@ QtObject {
       // more to learn by asking again.
       if (root.rulePresent === root.ruleExpected) root.rulePolls = 0
       else root.readRule()
+    }
+  }
+
+  // ------------------------------------------------- the clean shutdown
+  // The optional system unit (systemd/omawin-vm-shutdown.service) that stops
+  // the VM before Docker at a reboot or power-off, which Omarchy's 5 s stop
+  // limit otherwise kills mid-shutdown. `setup shutdown` installs it in a
+  // terminal, as the rule; /etc/systemd/system is world-readable, so this
+  // asks systemctl itself whether it is enabled.
+  readonly property string shutdownUnit: "omawin-vm-shutdown.service"
+  property bool shutdownEnabled: false
+  property bool shutdownRead: false
+
+  function readShutdown() {
+    if (!shutdownProc.running) shutdownProc.running = true
+  }
+
+  property Process shutdownProc: Process {
+    command: ["/usr/bin/timeout", "-k", "2", "5", "/usr/bin/systemctl", "is-enabled", root.shutdownUnit]
+    environment: ({ LC_ALL: "C" })
+    stdout: StdioCollector { id: shutdownOut; waitForEnd: true }
+    onExited: function (code) {
+      root.shutdownEnabled = code === 0 && root.lastLine(shutdownOut.text) === "enabled"
+      root.shutdownRead = true
+    }
+  }
+
+  property bool shutdownRemoving: false
+
+  function installShutdown() {
+    if (root.busy) return
+    root.shutdownRemoving = false
+    root.shutdownExpected = true
+    shutdownSetupProc.running = true
+  }
+
+  function removeShutdown() {
+    if (root.busy) return
+    root.shutdownRemoving = true
+    root.shutdownExpected = false
+    shutdownSetupProc.running = true
+  }
+
+  property Process shutdownSetupProc: Process {
+    command: ["/usr/share/omarchy/bin/omarchy-launch-floating-terminal-with-presentation",
+      "/usr/bin/sudo", root.setupCommand, "shutdown"].concat(root.shutdownRemoving ? ["--remove"] : [])
+    onExited: function (code) {
+      // As for the rule: the terminal outlives this launcher, so systemctl
+      // is asked again for two minutes until it says what was asked for.
+      root.readShutdown()
+      root.shutdownPolls = 40
+    }
+  }
+
+  property bool shutdownExpected: false
+  property int shutdownPolls: 0
+
+  property Timer shutdownTimer: Timer {
+    interval: 3000
+    repeat: true
+    running: root.shutdownPolls > 0
+    onTriggered: {
+      root.shutdownPolls -= 1
+      if (root.shutdownEnabled === root.shutdownExpected) root.shutdownPolls = 0
+      else root.readShutdown()
     }
   }
 

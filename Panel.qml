@@ -305,6 +305,7 @@ Panel {
   // Settings folds its two blocks of reference text until asked: the rule's
   // command lines, and the key line with its buttons. Closed on every visit.
   property bool showRule: false
+  property bool showUnit: false
   property bool keySetupOpen: false
 
   // Where Back leads from Backups: Settings, Remove or Tune. Tune and
@@ -350,7 +351,7 @@ Panel {
     else if (root.face === "updatePassword") root.openFace("login")
     else if (root.face === "remove") root.openFace(root.removeFrom)
     else if (root.face === "backup") root.openFace(root.backupFrom)
-    else if (root.face === "rule" || root.face === "key") root.openFace("settings")
+    else if (root.face === "rule" || root.face === "key" || root.face === "shutdown") root.openFace("settings")
     else if (root.face === "restore") root.openFace("backup")
     else if (root.face === "tune") root.openFace(root.tuneFrom)
     else if (root.face === "login") root.openFace(root.loginFrom)
@@ -386,9 +387,14 @@ Panel {
     }
     if (name === "settings") {
       service.readRule()
+      service.readShutdown()
       service.readKey()
       service.readBackupPlan()
       service.readBackups()
+    }
+    if (name === "shutdown") {
+      if (root.face !== "shutdown") root.showUnit = false
+      service.readShutdown()
     }
     if (name === "rule") {
       if (root.face !== "rule") root.showRule = false
@@ -541,7 +547,7 @@ Panel {
     // faces that only exist for a stopped VM open only on one, and nothing
     // runs. Anything else means "live".
     function face(name: string): string {
-      var faces = ["live", "tune", "login", "updatePassword", "settings", "rule", "key", "remove", "backup", "restore"]
+      var faces = ["live", "tune", "login", "updatePassword", "settings", "rule", "key", "shutdown", "remove", "backup", "restore"]
       root.openFace(faces.indexOf(String(name)) >= 0 ? String(name) : "live")
       return root.face
     }
@@ -653,6 +659,7 @@ Panel {
             : root.face === "backup" ? "Backups"
             : root.face === "restore" ? "Restore"
             : root.face === "rule" ? "Passwordless actions"
+            : root.face === "shutdown" ? "Clean shutdown"
             : root.face === "key" ? "Key binding"
             : "Settings"
           meta: root.live ? service.label
@@ -661,7 +668,7 @@ Panel {
             : root.face === "restore" ? "Windows VM · " + (root.restoreEntry
               ? "back to " + State.whenText(root.restoreEntry.when * 1000, Date.now()) : "stopped")
             : root.face === "settings" ? "Windows VM · Omawin " + root.pluginVersion
-            : root.face === "rule" || root.face === "key" ? "Windows VM · this desktop"
+            : root.face === "rule" || root.face === "key" || root.face === "shutdown" ? "Windows VM · this desktop"
             : "Windows VM · " + service.label.toLowerCase()
           foreground: root.failed && root.live ? root.urgentColor : root.fg
           fontFamily: root.family
@@ -1626,6 +1633,17 @@ Panel {
             onActivated: root.openFace("backup")
           }
 
+          SettingsRow {
+            visible: root.vmState !== "not-installed" || service.shutdownEnabled
+            title: "Clean shutdown"
+            value: !service.shutdownRead ? "" : service.shutdownEnabled ? "on" : "off"
+            tip: service.shutdownEnabled
+              ? "A reboot or power-off waits for Windows to shut down."
+              : "Omarchy gives Windows 5 seconds at a reboot, which cuts it off. This waits for it."
+            allowed: true
+            onActivated: root.openFace("shutdown")
+          }
+
           PanelSectionHeader {
             text: "DESKTOP"
             foreground: root.fg
@@ -1801,6 +1819,121 @@ Panel {
             }
           }
 
+        }
+
+        // ========================== Clean shutdown =========================
+        // The second opt-in: a system unit, ordered after docker.service, whose
+        // stop wakes a paused VM and stops it before Docker goes down. Omarchy
+        // gives every service 5 s at a reboot, which kills Windows mid-shutdown
+        // without it. Installed by `setup shutdown` in a terminal, as the rule.
+        Column {
+          visible: root.face === "shutdown"
+          width: parent.width
+          spacing: Style.space(14)
+
+          Row {
+            width: parent.width
+            spacing: Style.space(12)
+
+            Column {
+              width: parent.width - unitSwitch.implicitWidth - parent.spacing
+              spacing: Style.space(2)
+
+              InfoValue {
+                text: service.shutdownEnabled ? "Clean shutdown · ON" : "Clean shutdown"
+              }
+
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+                color: root.dim
+                font.family: root.family
+                font.pixelSize: Style.font.caption
+                text: service.shutdownEnabled
+                  ? "A reboot or power-off waits for Windows to shut down, up to 2 minutes, and wakes a paused VM first."
+                  : "Omarchy gives every service 5 seconds to stop at a reboot or power-off. Windows needs longer, so it is cut off, paused or not, as if the power went."
+              }
+            }
+
+            ToggleSwitch {
+              id: unitSwitch
+              anchors.verticalCenter: parent.verticalCenter
+              checked: service.shutdownEnabled
+              busy: service.busy
+              foreground: root.fg
+              onToggled: { service.shutdownEnabled ? service.removeShutdown() : service.installShutdown(); root.close() }
+            }
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            color: root.dim
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            font.underline: true
+            text: root.showUnit ? "Hide what it runs ▾" : "Show what it runs ▸"
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.showUnit = !root.showUnit
+            }
+          }
+
+          // The two lines of systemd/omawin-vm-shutdown.service that do
+          // anything; the terminal shows the whole file before writing it.
+          Item {
+            visible: root.showUnit
+            width: parent.width
+            implicitHeight: unitText.implicitHeight + Style.space(12)
+
+            Rectangle {
+              anchors.fill: parent
+              color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.04)
+            }
+
+            Text {
+              id: unitText
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(10)
+              anchors.right: parent.right
+              anchors.rightMargin: Style.space(10)
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              wrapMode: Text.WordWrap
+              color: root.dim
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              text: "When Docker stops, just before it:\n"
+                + "/usr/bin/docker unpause omarchy-windows\n"
+                + "/usr/bin/docker stop --time 120 omarchy-windows"
+            }
+          }
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.dim
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            text: service.shutdownEnabled
+              ? "Removing it leaves it armed until the next reboot: stopping it now would shut Windows down."
+              : "Installs /etc/systemd/system/" + service.shutdownUnit + ". Opens a terminal; sudo asks for your password once and the file is shown before it is written."
+          }
+
+          ActionRow {
+            id: unitRow
+            cells: 1
+            ActionButton {
+              width: unitRow.cellWidth
+              iconText: root.shieldGlyph
+              text: service.shutdownEnabled ? "Remove unit…" : "Install unit…"
+              allowed: !service.busy
+              onClicked: { service.shutdownEnabled ? service.removeShutdown() : service.installShutdown(); root.close() }
+            }
+          }
         }
 
         // =========================== Key binding ===========================

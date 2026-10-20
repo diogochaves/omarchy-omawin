@@ -44,8 +44,10 @@ How Omawin works, what it touches, and why. For using it, see the
   (0600, tmpfs), and 30 s later `wl-paste` plus `wl-copy --clear` if the
   clipboard still holds exactly that; Settings › Key binding adds
   `/usr/bin/wl-copy` with the constant `o.bind(…)` line, and
-  `omarchy-launch-editor ~/.config/hypr/bindings.lua`; the Settings switch adds
-  `sudo <plugin dir>/setup polkit [--remove]` in Omarchy's floating terminal.
+  `omarchy-launch-editor ~/.config/hypr/bindings.lua`; the Settings switches add
+  `sudo <plugin dir>/setup polkit [--remove]` and
+  `sudo <plugin dir>/setup shutdown [--remove]` in Omarchy's floating terminal,
+  and Clean shutdown's row `systemctl is-enabled omawin-vm-shutdown.service`.
   Every command is a constant with an absolute path; nothing is built from
   data, and no password is ever an argument — `/proc/<pid>/cmdline` is
   world-readable, so the password goes in on stdin or not at all.
@@ -58,8 +60,9 @@ How Omawin works, what it touches, and why. For using it, see the
   one), and
   `/var/lib/omarchy/windows/docker-compose.yml` — by asking root to, through
   the helper's own validated writer. `sudo ./setup polkit` writes the rule and
-  a user-owned copy of it at `~/.local/state/omawin/49-omawin.rules`. None of
-  your configuration is touched.
+  a user-owned copy of it at `~/.local/state/omawin/49-omawin.rules`;
+  `sudo ./setup shutdown` writes `/etc/systemd/system/omawin-vm-shutdown.service`
+  and enables it. None of your configuration is touched.
 - **Privilege**: none of its own. `omarchy-windows-vm` calls pkexec itself for
   `__priv up_wait` and `__priv down`; pause, unpause and `write_compose` go
   through pkexec directly. The polkit rule is optional and installed by you, on
@@ -144,6 +147,30 @@ is not widget work, and it does not pretend otherwise:
 | Second VM | Not with the helper | Own compose, other ports, outside Omarchy. |
 | Autostart at login | Not by default | Possible with the polkit rule plus a user unit that runs `omarchy-windows-vm launch -k`. |
 | Logs / console | Web viewer on 8006 | `docker logs` needs the socket. |
+
+## Clean shutdown
+
+Omarchy ships `DefaultTimeoutStopSec=5s` (`/etc/systemd/system.conf.d/10-faster-shutdown.conf`,
+from `omarchy-settings`), and nothing in Omarchy stops the VM before a reboot or
+power-off. So systemd sends SIGTERM to dockerd (`KillMode=process`), dockerd
+starts stopping the container with its two-minute grace period, and 5 s later
+systemd SIGKILLs dockerd and the container's scope: Windows is killed halfway
+through its shutdown, every time. A paused VM never even starts one. The
+journal shows it as `docker.service: State 'stop-sigterm' timed out. Killing.`
+followed by the container's scope going.
+
+**Settings › Clean shutdown** installs `systemd/omawin-vm-shutdown.service`
+(through `sudo <plugin dir>/setup shutdown`, which prints it before writing it
+to `/etc/systemd/system` and enables it as wanted by `docker.service`). The
+unit is `BindsTo=` and `After=docker.service`, so it starts with Docker and is
+stopped just before it, at a shutdown and at a `systemctl restart docker`
+alike. Its start does nothing; its stop runs `docker unpause omarchy-windows`
+and `docker stop --time 120 omarchy-windows`, each allowed to fail (no VM, or
+one already off, costs nothing), with `TimeoutStopSec=150`. It runs no file
+of the plugin's, so it can't be changed from the user's side and outlives the
+plugin harmlessly. `--remove` disables and deletes it without stopping it,
+since stopping it would shut Windows down: it stays armed until the next
+reboot. The card asks `systemctl is-enabled` for the row's value.
 
 ## Polkit rule
 

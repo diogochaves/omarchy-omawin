@@ -60,6 +60,11 @@ Two things of Omawin's can stay behind:
 - The polkit rule, only if you turned on Passwordless actions. Turn it off in
   Settings **before** removing the plugin, or afterwards run
   `sudo rm /etc/polkit-1/rules.d/49-omawin.rules`.
+- The clean-shutdown unit, only if you turned on Clean shutdown. Turn it off
+  in Settings **before** removing the plugin, or afterwards run
+  `sudo systemctl disable omawin-vm-shutdown.service` and
+  `sudo rm /etc/systemd/system/omawin-vm-shutdown.service`. It is harmless
+  without the plugin: it never runs the plugin's own files.
 
 ## Using it
 
@@ -105,11 +110,17 @@ o.bind("SUPER + ALT + W", "Windows VM", "omarchy-shell chaves.omawin primary")
   copied password stays out of Omarchy's clipboard history and is cleared
   after 30 s. Changed the password inside Windows, or want to log in as
   another account? **Change…** opens the fields in place, so Connect keeps working.
-- **Settings** (the gear) is a list: Tune, Login, Back up, Passwordless
-  actions, Key binding and Remove VM…, each with its current value and a
-  line on what it does. **Passwordless actions** is a polkit rule that lets
-  Start, Stop, Pause and Resume run without a dialog, for you only. It opens
-  a terminal, shows you the rule and asks before writing it.
+- **Settings** (the gear) is a list: Tune, Login, Backups, Clean shutdown,
+  Passwordless actions, Key binding and Remove VM…, each with its current
+  value and a line on what it does. **Passwordless actions** is a polkit rule
+  that lets Start, Stop, Pause and Resume run without a dialog, for you only.
+  It opens a terminal, shows you the rule and asks before writing it.
+- **Clean shutdown** (in Settings) makes a reboot or power-off wait for
+  Windows to shut down. Omarchy gives every service 5 seconds to stop, Docker
+  included, so without it Windows is cut off as if the power went, paused or
+  not. It installs a small system unit that, just before Docker stops, wakes
+  a paused VM and stops it, giving Windows up to 2 minutes. Like the rule, it
+  opens a terminal and shows the file before writing it.
 - **Backups** (in Settings) lists every backup on disk, newest first, with
   its drive and what deleting it would free (on btrfs a fresh one frees
   nothing: it shares Windows' blocks). **Back up now** (VM off) copies
