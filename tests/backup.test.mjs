@@ -254,3 +254,70 @@ test('a backup on another filesystem says same=0', t => {
   assert.equal(f.same, '0')
   assert.equal(f.where, other)
 })
+
+// The list (#23): every backup beside the VM's folder and in $HOME, newest
+// first, with what deleting it frees. Half-made and look-alike folders are
+// not backups.
+const lines = out => out.split('\n').filter(Boolean).map(line => {
+  const at = line.indexOf(' path=')
+  return { ...fields(line.slice(0, at)), path: line.slice(at + 6) }
+})
+
+function fakeBackup(dir, when) {
+  fs.mkdirSync(path.join(dir, 'windows'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'windows', 'data.img'), Buffer.alloc(64 * 1024, 1))
+  fs.utimesSync(dir, when, when)
+}
+
+test('list shows every backup, newest first, with its own size', t => {
+  const { env, home } = box(t)
+  const drive = path.join(home, 'data')
+  fs.mkdirSync(drive)
+  fs.renameSync(env.WINDOWS_DIR, path.join(drive, 'windows'))
+  fs.symlinkSync(path.join(drive, 'windows'), env.WINDOWS_DIR)
+  fakeBackup(path.join(drive, 'windows.bak-2026-10-20'), 1792500000)
+  fakeBackup(path.join(home, '.windows.bak-2026-10-04'), 1791100000)
+  fakeBackup(path.join(drive, 'windows.bak-2026-10-12'), 1791800000)
+  fakeBackup(path.join(drive, 'windows.bak-2026-10-21.partial'), 1792600000)
+  fs.mkdirSync(path.join(drive, 'windows.bak-2026-10-22'))
+  fs.symlinkSync(path.join(drive, 'windows.bak-2026-10-20'), path.join(home, '.windows.bak-2026-10-23'))
+  const beside = { ...env }
+  delete beside.BACKUP_ROOT
+  const result = helper('backup.sh', ['list'], beside)
+  assert.equal(result.status, 0, result.err)
+  const list = lines(result.out)
+  assert.deepEqual(list.map(b => path.basename(b.path)),
+    ['windows.bak-2026-10-20', 'windows.bak-2026-10-12', '.windows.bak-2026-10-04'])
+  assert.deepEqual(list.map(b => b.when), ['1792500000', '1791800000', '1791100000'])
+  for (const b of list) {
+    assert.match(b.own, /^[0-9]+$/)
+    assert.match(b.measured, /^(btrfs|du)$/)
+    assert.equal(b.same, '1')
+  }
+})
+
+test('list with no backups is empty, and with no VM folder status 3', t => {
+  const { env } = box(t)
+  const empty = helper('backup.sh', ['list'], env)
+  assert.equal(empty.status, 0, empty.err)
+  assert.equal(empty.out, '')
+  fs.rmSync(env.WINDOWS_DIR, { recursive: true })
+  assert.equal(helper('backup.sh', ['list'], env).status, 3)
+})
+
+test('on btrfs, list says a fresh backup holds next to nothing of its own', t => {
+  const under = btrfsDir()
+  if (!under) return t.skip('no btrfs folder (set OMAWIN_TEST_BTRFS)')
+  const { env, home } = box(t, { written: 0, under })
+  const image = path.join(env.WINDOWS_DIR, 'data.img')
+  fs.rmSync(image)
+  assert.equal(spawnSync('/usr/bin/chattr', ['+C', env.WINDOWS_DIR]).status, 0)
+  fs.writeFileSync(image, Buffer.alloc(4 * MIB, 7))
+  const real = { ...env }
+  delete real.REFLINK
+  assert.equal(helper('backup.sh', ['run'], real).status, 0)
+  spawnSync('/usr/bin/sync', ['-f', home])
+  const [b] = lines(helper('backup.sh', ['list'], real).out)
+  assert.equal(b.measured, 'btrfs')
+  assert.ok(Number(b.own) < MIB, `own=${b.own}: the copy shares the image's blocks`)
+})

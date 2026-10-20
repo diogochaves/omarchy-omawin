@@ -28,6 +28,15 @@ chaves.omawin` brings you the latest.
   on it, with Cancel and Save…, where Update login… used to open a face of
   its own.
 
+### Added
+
+- **Backups lists the backups you have.** Settings › Backups shows each one,
+  newest first, with when it was made, which drive it is on and what
+  deleting it would free: on btrfs a fresh backup frees nothing, since it
+  shares Windows' blocks. Back up now is on the same face, and the list can
+  be read while Windows runs. Show folder opens a backup in the file
+  manager.
+
 ## 0.3.3 — 2026-10-20
 
 ### Changed

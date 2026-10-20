@@ -42,6 +42,8 @@ Panel {
     // through openFace(), which would clear that banner on the way.
     onShapeApplied: root.face = "live"
     onPasswordSaved: { root.dropPasswordField(); root.face = "login" }
+    // A copy that just landed is the Backups face's open row.
+    onBackupDoneChanged: if (service.backupDone !== "") root.backupPick = service.backupDone
   }
 
   // ------------------------------------------------------------ the palette
@@ -302,10 +304,13 @@ Panel {
   property bool showRule: false
   property bool keySetupOpen: false
 
-  // Where Back leads from Back up VM: Settings, Remove or Tune. Tune and
+  // Where Back leads from Backups: Settings, Remove or Tune. Tune and
   // Login go back to Settings when opened from it, to the card otherwise.
   property string backupFrom: "settings"
   property string tuneFrom: "live"
+  // The backup the Backups face has open, by path: it shows its actions.
+  // Empty means the newest one.
+  property string backupPick: ""
   property string loginFrom: "live"
   property bool removeAck: false
 
@@ -353,7 +358,7 @@ Panel {
     // that is off. Their buttons can only reach them then, but the IPC `face`
     // can be asked for one at any time: it gets the card instead.
     if (!root.stoppedFace
-      && (name === "tune" || name === "updatePassword" || name === "remove" || name === "backup"))
+      && (name === "tune" || name === "updatePassword" || name === "remove"))
       name = "live"
     if (name === "tune") {
       if (root.face !== "tune") root.tuneFrom = root.face === "settings" ? "settings" : "live"
@@ -365,6 +370,7 @@ Panel {
       service.readRule()
       service.readKey()
       service.readBackupPlan()
+      service.readBackups()
     }
     if (name === "rule") {
       if (root.face !== "rule") root.showRule = false
@@ -385,6 +391,8 @@ Panel {
       // A finished or failed copy is shown once; the next visit starts over.
       if (!service.backupProc.running) service.clearBackup()
       service.readBackupPlan()
+      service.readBackups()
+      if (root.face !== "backup") root.backupPick = ""
     }
     if (name === "updatePassword") {
       service.clearNotice()
@@ -406,11 +414,11 @@ Panel {
   // write is consumed by the next `docker compose up`, and a VM that started
   // underneath would recreate its container from a file the user is still
   // editing. They close themselves rather than fail on Apply. Remove goes too:
-  // it is only offered for a VM that is off.
+  // it is only offered for a VM that is off. Backups stays: its list can be
+  // read and pruned while Windows runs, only Back up and Restore wait.
   onVmStateChanged: {
     if (!root.stoppedFace
-      && (root.face === "tune" || root.face === "updatePassword" || root.face === "remove"
-        || root.face === "backup")) {
+      && (root.face === "tune" || root.face === "updatePassword" || root.face === "remove")) {
       root.dropPasswordField()
       root.face = "live"
     }
@@ -607,7 +615,7 @@ Panel {
             : root.face === "login" ? "Login"
             : root.face === "updatePassword" ? "Login"
             : root.face === "remove" ? "Remove VM"
-            : root.face === "backup" ? "Back up VM"
+            : root.face === "backup" ? "Backups"
             : root.face === "rule" ? "Passwordless actions"
             : root.face === "key" ? "Key binding"
             : "Settings"
@@ -1286,7 +1294,7 @@ Panel {
               linkColor: root.fg
               font.family: root.family
               font.pixelSize: Style.font.caption
-              text: "A disk can't shrink. For a smaller one, <a href=\"backup\"><b>Back up VM →</b></a>, then <a href=\"remove\"><b>Remove VM →</b></a> and Install… again."
+              text: "A disk can't shrink. For a smaller one, <a href=\"backup\"><b>Back up →</b></a>, then <a href=\"remove\"><b>Remove VM →</b></a> and Install… again."
               onLinkActivated: function (link) {
                 if ((link === "backup" || link === "remove") && root.can(link)) root.openFace(link)
               }
@@ -1555,15 +1563,14 @@ Panel {
 
           SettingsRow {
             visible: root.vmState !== "not-installed"
-            title: "Back up"
+            title: "Backups"
             value: service.backupProc.running
               ? "copying · " + State.gbText(service.backupCopied)
-              : service.backupPlan && service.backupPlan.last > 0
-                ? "last: " + State.dateText(service.backupPlan.last * 1000) : ""
+              : service.backupsText
             tip: root.stoppedFace
-              ? "Copies Windows' disk and login next to the original, so a Tune, update or Remove can be undone."
-              : "Stop the VM to back it up: a copy of a disk Windows is writing to would be torn."
-            allowed: (root.can("backup") || service.backupProc.running) && root.stoppedFace
+              ? "Copies of Windows' disk and login, next to the original, so a Tune, update or Remove can be undone."
+              : "Copies of Windows' disk and login. Stop the VM to make one; you can look at them now."
+            allowed: true
             onActivated: root.openFace("backup")
           }
 
@@ -1839,11 +1846,13 @@ Panel {
 
         }
 
-        // =========================== Back up VM ============================
-        // helpers/backup.sh plan/run: ~/.windows and the credentials file into
-        // <name>.bak-<date> beside the VM's real folder (or $HOME), as the
-        // user, VM off. Four states: the plan
-        // (with the room check), copying (progress, Cancel), done, failed.
+        // ============================= Backups =============================
+        // helpers/backup.sh plan/run/list: ~/.windows and the credentials file
+        // into <name>.bak-<date> beside the VM's real folder (or $HOME), as the
+        // user, VM off; and every backup already on disk, with what deleting
+        // it frees. The making part has four states: the plan (with the room
+        // check), copying (progress, Cancel), done, failed. The list is read
+        // whatever the VM does: only making and restoring need it off.
         Column {
           id: backupFace
           visible: root.face === "backup"
@@ -1853,10 +1862,17 @@ Panel {
           readonly property var plan: service.backupPlan
           readonly property bool running: service.backupProc.running
           readonly property bool done: service.backupDone !== ""
+          // The open row: the one picked, else the newest.
+          readonly property string pick: {
+            var list = service.backupList
+            for (var i = 0; i < list.length; i++)
+              if (list[i].path === root.backupPick) return root.backupPick
+            return list.length > 0 ? list[0].path : ""
+          }
 
           // ---- the plan
           Column {
-            visible: !backupFace.running && !backupFace.done
+            visible: !backupFace.running && !backupFace.done && root.stoppedFace
             width: parent.width
             spacing: Style.spacing.labelGap
 
@@ -1865,11 +1881,6 @@ Panel {
               value: service.currentDisk !== "" ? service.currentDisk : "—"
               note: backupFace.plan ? State.gbText(backupFace.plan.used) + " written"
                 : service.backupNothingYet ? "not made yet" : ""
-            }
-            InfoPair {
-              label: "Login"
-              value: "~/.config/windows/credentials"
-              dimValue: true
             }
             InfoPair {
               label: "Copy to"
@@ -1891,28 +1902,31 @@ Panel {
             width: parent.width
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            color: service.backupError !== "" || service.backupPlanError !== ""
+            color: !root.stoppedFace ? root.warnColor
+              : service.backupError !== "" || service.backupPlanError !== ""
               || (backupFace.plan && !backupFace.plan.ok) ? root.urgentColor : root.dim
             font.family: root.family
             font.pixelSize: Style.font.caption
-            text: service.backupError !== "" ? "The backup failed: " + service.backupError
+            text: !root.stoppedFace ? "Stop the VM to back it up: a copy of a disk Windows is writing to would be torn. You can still look at the backups below."
+              : service.backupError !== "" ? "The backup failed: " + service.backupError
               : service.backupNothingYet ? "Nothing to back up yet: Windows makes its disk the first time it starts. Start it once, then come back."
               : service.backupPlanError !== "" ? "Couldn't read the VM's size: " + service.backupPlanError
               : !backupFace.plan ? "Reading the VM's size…"
               : !backupFace.plan.ok ? "Not enough room for a full copy. Free some space, or copy ~/.windows to another drive by hand."
               : backupFace.plan.same
-                ? "Same drive as the original: this saves you from a bad Tune, update or Remove, not from a dead drive. To keep a copy elsewhere, copy that folder off."
-                : "On another drive than the original, so it also outlives that drive. It's a full copy, as a copy across drives always is."
+                ? "Copies Windows' disk and login. Same drive as the original: this saves you from a bad Tune, update or Remove, not from a dead drive. To keep a copy elsewhere, copy that folder off."
+                : "Copies Windows' disk and login. On another drive than the original, so it also outlives that drive. It's a full copy, as a copy across drives always is."
           }
 
           ActionRow {
             id: backupRow
-            visible: !backupFace.running && !backupFace.done
+            visible: !backupFace.running && !backupFace.done && root.stoppedFace
             cells: 1
             ActionButton {
               width: backupRow.cellWidth
               iconText: root.copyGlyph
-              text: "Back up"
+              text: "Back up now"
+              primary: true
               allowed: root.can("backup") && !!service.backupPlan && service.backupPlan.ok
               onClicked: service.startBackup()
             }
@@ -1979,7 +1993,7 @@ Panel {
             color: root.dim
             font.family: root.family
             font.pixelSize: Style.font.caption
-            text: "To restore, follow \"Restoring a backed-up VM\" in the README. Delete old backups from the file manager."
+            text: "It's first in the list below."
           }
 
           ActionRow {
@@ -1998,7 +2012,57 @@ Panel {
               iconText: root.checkGlyph
               text: "Done"
               allowed: true
-              onClicked: root.goBack()
+              onClicked: service.clearBackup()
+            }
+          }
+
+          // ---- the backups on disk
+          Item {
+            visible: !backupFace.running
+            width: parent.width
+            implicitHeight: listHeader.implicitHeight
+
+            PanelSectionHeader {
+              id: listHeader
+              anchors.left: parent.left
+              text: "ON DISK" + (service.backupListRead ? " · " + service.backupList.length : "")
+              foreground: root.fg
+              fontFamily: root.family
+            }
+
+            PanelSectionHeader {
+              anchors.right: parent.right
+              visible: service.backupList.length > 0
+              text: "OWN SIZE"
+              foreground: root.fg
+              fontFamily: root.family
+            }
+          }
+
+          Text {
+            visible: !backupFace.running && service.backupListRead && service.backupList.length === 0
+            width: parent.width
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.dim
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            text: "No backups yet. Back up now makes the first, next to the VM."
+          }
+
+          Column {
+            visible: !backupFace.running && service.backupList.length > 0
+            width: parent.width
+            spacing: Style.space(6)
+
+            Repeater {
+              model: service.backupList
+
+              BackupRow {
+                required property var modelData
+                entry: modelData
+                open: modelData.path === backupFace.pick
+              }
             }
           }
         }
@@ -2016,7 +2080,7 @@ Panel {
 
           BannerBox {
             accentColor: root.urgentColor
-            text: "Back up first. Everything inside Windows is deleted: your files, apps and settings. Keep the whole VM with Back up VM, or copy what you want into the Shared folder, which stays (Start and Connect from the card, then come back)."
+            text: "Back up first. Everything inside Windows is deleted: your files, apps and settings. Keep the whole VM with a backup (Backups…), or copy what you want into the Shared folder, which stays (Start and Connect from the card, then come back)."
           }
 
           ActionRow {
@@ -2025,8 +2089,8 @@ Panel {
             ActionButton {
               width: removeBackupRow.cellWidth
               iconText: root.copyGlyph
-              text: "Back up VM…"
-              allowed: root.can("backup")
+              text: "Backups…"
+              allowed: true
               onClicked: root.openFace("backup")
             }
           }
@@ -2268,6 +2332,88 @@ Panel {
       enabled: settingsRow.allowed
       cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
       onClicked: settingsRow.activated()
+    }
+  }
+
+  // One backup on the Backups face: when it was made and what deleting it
+  // frees on the first line; which drive and where on the second. The open
+  // one (picked, or the newest) shows its actions; a click opens another.
+  component BackupRow: Item {
+    id: backupItem
+    property var entry: ({})
+    property bool open: false
+
+    width: parent.width
+    implicitHeight: backupText.implicitHeight + Style.space(16)
+
+    Rectangle {
+      anchors.fill: parent
+      radius: Style.cornerRadius
+      color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, backupItem.open ? 0.07 : backupArea.containsMouse ? 0.05 : 0.03)
+    }
+
+    MouseArea {
+      id: backupArea
+      anchors.fill: parent
+      hoverEnabled: true
+      enabled: !backupItem.open
+      cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+      onClicked: root.backupPick = backupItem.entry.path
+    }
+
+    Column {
+      id: backupText
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.margins: Style.space(8)
+      spacing: Style.space(2)
+
+      Item {
+        width: parent.width
+        implicitHeight: Math.max(backupWhen.implicitHeight, backupOwn.implicitHeight)
+
+        InfoValue {
+          id: backupWhen
+          anchors.left: parent.left
+          text: State.whenText(backupItem.entry.when * 1000, Date.now())
+        }
+
+        InfoValue {
+          id: backupOwn
+          anchors.right: parent.right
+          text: State.sizeText(backupItem.entry.own)
+          opacity: backupItem.entry.own === 0 ? 0.6 : 1.0
+        }
+      }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        color: root.dim
+        font.family: root.family
+        font.pixelSize: Style.font.caption
+        text: (backupItem.entry.same ? "VM's drive · " : "other drive · ")
+          + State.tildePath(backupItem.entry.path, service.home)
+          + (backupItem.entry.measured === "btrfs" && backupItem.entry.own === 0 ? " · shares all its blocks"
+            : backupItem.entry.measured === "du" ? " · a full copy" : "")
+      }
+
+      Item { width: 1; height: Style.space(4); visible: backupItem.open }
+
+      ActionRow {
+        id: backupActions
+        visible: backupItem.open
+        cells: 1
+        ActionButton {
+          width: backupActions.cellWidth
+          iconText: root.folderGlyph
+          text: "Show folder"
+          allowed: true
+          onClicked: { service.openFolder(backupItem.entry.path); root.close() }
+        }
+      }
     }
   }
 

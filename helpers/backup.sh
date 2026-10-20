@@ -8,6 +8,9 @@
 #                            last=1790812800 where=/mnt/data
 #   helpers/backup.sh run    makes that copy: `copied=<bytes>` lines while it
 #                            runs, then `done=<full path>`; SIGTERM cancels it
+#   helpers/backup.sh list   one line per backup on disk, newest first:
+#                            when=1792504162 own=0 measured=btrfs same=1
+#                            path=/mnt/data/windows.bak-2026-10-20
 #
 #   ok       there is room for the copy (1/0)
 #   reflink  the VM's folder and `where` are on one btrfs or XFS filesystem,
@@ -20,6 +23,16 @@
 #   target   the folder `run` would make in `where`
 #   last     mtime, epoch seconds, of the newest earlier backup, or empty
 #   where    the folder the backup goes in (see "Where" below)
+#
+# `list` fields, `path` last (it may hold spaces):
+#   when      the backup's mtime, epoch seconds
+#   own       bytes only it holds, what deleting it frees: btrfs's exclusive
+#             size where the filesystem shares blocks (`measured=btrfs`), else
+#             its plain size (`measured=du`)
+#   same      on the VM's filesystem (1/0)
+#   path      the backup folder
+# A backup is a <name>.bak-<date> folder holding windows/data.img, beside the
+# VM's folder or in $HOME; half-made `.partial` folders are not listed.
 #
 # Where: beside the VM's real folder, so on its filesystem and a reflink copy
 # wherever it allows one. ~/.windows is usually that folder, and the backup is
@@ -192,6 +205,47 @@ last_backup() {
   ((newest > 0)) && printf '%s' "$newest"
 }
 
+# What a backup holds that nothing else does, and how that was measured:
+# "<bytes> btrfs" from btrfs's exclusive count, "<bytes> du" otherwise.
+own_size() {
+  local line bytes
+  if [[ $(/usr/bin/stat -f -c %T -- "$1" 2>/dev/null) == btrfs && -x /usr/bin/btrfs ]]; then
+    line=$(/usr/bin/btrfs filesystem du -s --raw -- "$1" 2>/dev/null | /usr/bin/tail -n 1)
+    read -r _ bytes _ <<<"$line"
+    if [[ $bytes =~ ^[0-9]{1,19}$ ]]; then
+      printf '%s btrfs' "$bytes"
+      return
+    fi
+  fi
+  bytes=$(occupied "$1") || return 1
+  printf '%s du' "$bytes"
+}
+
+# Every backup on disk, beside the VM's folder and in $HOME, newest first.
+backups() {
+  local dir seen=
+  for dir in "$root/$base".bak-* "$HOME"/.windows.bak-*; do
+    [[ $dir == *.partial || ! -d $dir || -L $dir || ! -f $dir/windows/data.img ]] && continue
+    [[ $dir == *$'\n'* ]] && continue
+    [[ $seen == *$'\n'"$dir"$'\n'* ]] && continue
+    seen+=$'\n'"$dir"$'\n'
+    printf '%s\t%s\n' "$(/usr/bin/stat -c %Y -- "$dir" 2>/dev/null || echo 0)" "$dir"
+  done | /usr/bin/sort -rn -k1,1
+}
+
+print_list() {
+  [[ -d $windows ]] || nothing_yet "nothing to list: there is no $windows"
+  choose_root
+  local when dir own measured same vm
+  vm=$(/usr/bin/stat -c %d -- "$windows/." 2>/dev/null)
+  while IFS=$'\t' read -r when dir; do
+    read -r own measured <<<"$(own_size "$dir" || echo "")"
+    same=0
+    [[ -n $vm && $(/usr/bin/stat -c %d -- "$dir" 2>/dev/null) == "$vm" ]] && same=1
+    printf 'when=%s own=%s measured=%s same=%s path=%s\n' "$when" "$own" "$measured" "$same" "$dir"
+  done < <(backups)
+}
+
 # The copy and the VM's folder on one filesystem.
 same_drive() {
   local src dst
@@ -302,5 +356,6 @@ run() {
 case ${1-} in
   plan) print_plan ;;
   run) run ;;
-  *) die "usage: backup.sh plan | run" ;;
+  list) print_list ;;
+  *) die "usage: backup.sh plan | run | list" ;;
 esac

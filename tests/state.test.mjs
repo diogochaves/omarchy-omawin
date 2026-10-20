@@ -641,6 +641,32 @@ test('tooltip names the key on the stopped and ready states', () => {
   assert.equal(State.KEY_SHAPE.test('SUPER+ALT+W'), false)
 })
 
+test('parseBackupList reads the helper lines and drops anything else', () => {
+  const list = State.parseBackupList([
+    'when=1792505461 own=0 measured=btrfs same=1 path=/mnt/data/windows.bak-2026-10-20',
+    'when=1791100000 own=14454091776 measured=du same=0 path=/home/me/.windows.bak-2026-10-04',
+    'when=1791100000 own= measured= same=0 path=/home/me/my files/.windows.bak-2026-10-03',
+    'when=1 own=0 measured=btrfs same=1 path=/etc/passwd',
+    'when=x own=0 measured=btrfs same=1 path=/mnt/data/windows.bak-2026-10-20',
+    'garbage', ''
+  ].join('\n'))
+  assert.deepEqual(list.map(b => b.path), ['/mnt/data/windows.bak-2026-10-20',
+    '/home/me/.windows.bak-2026-10-04', '/home/me/my files/.windows.bak-2026-10-03'])
+  assert.deepEqual(list[0], { when: 1792505461, own: 0, measured: 'btrfs', same: true,
+    path: '/mnt/data/windows.bak-2026-10-20' })
+  assert.equal(list[2].own, -1)
+  assert.deepEqual(State.parseBackupList(undefined), [])
+  assert.equal(State.sizeText(0), 'nothing')
+  assert.equal(State.sizeText(-1), '—')
+  assert.equal(State.sizeText(1000), 'under 1 MB')
+  assert.equal(State.sizeText(300 * 1048576 + 1), '301 MB')
+  assert.equal(State.sizeText(2.14 * 1073741824), '2.1 GB')
+  assert.equal(State.sizeText(14454091776), '13 GB')
+  const at = new Date(2026, 9, 20, 11, 11).getTime()
+  assert.equal(State.whenText(at, at), '20 Oct 11:11')
+  assert.equal(State.whenText(new Date(2025, 0, 2, 9, 5).getTime(), at), '2 Jan 2025 09:05')
+})
+
 test('parseBackupPlan reads the helper line and refuses anything else', () => {
   const plan = State.parseBackupPlan(
     'ok=1 reflink=0 same=1 used=24696061952 free=1616073883648 target=.windows.bak-2026-10-04-2 last=1790812800 where=/home/me\n')

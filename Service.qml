@@ -1254,16 +1254,61 @@ QtObject {
         root.backupError = root.lastLine(backupErr.text) || "the backup failed"
       if (code !== 0) root.backupDone = ""
       root.readBackupPlan()
+      root.readBackups()
     }
   }
 
-  function openBackup() {
-    if (root.backupDone === "" || backupOpenProc.running) return
-    backupOpenProc.running = true
+  // Every backup on disk (`list`), newest first: what the Backups face lists
+  // and the Settings row counts. Read when either opens and after anything
+  // that adds or removes one.
+  property var backupList: []
+  property bool backupListRead: false
+
+  function readBackups() {
+    if (backupListProc.running) backupListAgain = true
+    else backupListProc.running = true
+  }
+  // A read asked for while one runs (a copy ending as the face opens) runs
+  // once more after it, so the list never shows the state before the change.
+  property bool backupListAgain: false
+
+  property Process backupListProc: Process {
+    command: ["/usr/bin/timeout", "-k", "2", "20", "/usr/bin/bash", root.helpers + "/backup.sh", "list"]
+    environment: ({ LC_ALL: "C" })
+    stdout: StdioCollector { id: backupListOut; waitForEnd: true }
+    onExited: function (code) {
+      root.backupList = code === 0 ? State.parseBackupList(String(backupListOut.text)) : []
+      root.backupListRead = true
+      if (root.backupListAgain) {
+        root.backupListAgain = false
+        backupListProc.running = true
+      }
+    }
   }
 
-  property Process backupOpenProc: Process {
-    command: ["/usr/bin/xdg-open", root.backupDone]
+  // The newest backup's row in Settings: "2 · last 20 Oct", "none yet".
+  readonly property string backupsText: !root.backupListRead ? ""
+    : root.backupList.length === 0 ? "none yet"
+    : root.backupList.length + " · last " + State.dateText(root.backupList[0].when * 1000).replace(/ [0-9]{4}$/, "")
+
+  function openBackup() {
+    if (root.backupDone !== "") root.openFolder(root.backupDone)
+  }
+
+  // A backup's folder in the file manager: only a path the list or the copy
+  // reported, never one typed anywhere.
+  property string folderToOpen: ""
+  function openFolder(path) {
+    var known = path === root.backupDone
+    for (var i = 0; i < root.backupList.length && !known; i++)
+      known = root.backupList[i].path === path
+    if (!known || folderOpenProc.running) return
+    root.folderToOpen = path
+    folderOpenProc.running = true
+  }
+
+  property Process folderOpenProc: Process {
+    command: ["/usr/bin/xdg-open", root.folderToOpen]
   }
 
   // ------------------------------------------------------ the key binding

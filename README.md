@@ -110,14 +110,17 @@ o.bind("SUPER + ALT + W", "Windows VM", "omarchy-shell chaves.omawin primary")
   line on what it does. **Passwordless actions** is a polkit rule that lets
   Start, Stop, Pause and Resume run without a dialog, for you only. It opens
   a terminal, shows you the rule and asks before writing it.
-- **Back up VM…** (in Settings, VM off) copies Windows' disk and login into
-  a folder next to the original, `~/.windows.bak-<date>` (or beside the
-  folder `~/.windows` points to, if you moved it to another drive): instant
-  on btrfs, a full copy elsewhere, with progress and Cancel. Restoring is by hand: see
+- **Backups** (in Settings) lists every backup on disk, newest first, with
+  its drive and what deleting it would free (on btrfs a fresh one frees
+  nothing: it shares Windows' blocks). **Back up now** (VM off) copies
+  Windows' disk and login into a folder next to the original,
+  `~/.windows.bak-<date>` (or beside the folder `~/.windows` points to, if
+  you moved it to another drive): instant on btrfs, a full copy elsewhere,
+  with progress and Cancel. Restoring is by hand: see
   [Restoring a backed-up VM](#restoring-a-backed-up-vm).
 - **Remove VM…** (in Settings, VM off) deletes Windows and everything in it,
   for a fresh start or a smaller disk. It lists what goes and what stays, and
-  asks you to say you've backed up: Back up VM…, or copy what you want to keep
+  asks you to say you've backed up: Backups…, or copy what you want to keep
   into the Shared folder, which stays. Then Omarchy's own remover runs in a
   terminal and asks you to confirm.
 
