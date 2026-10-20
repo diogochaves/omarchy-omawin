@@ -15,9 +15,9 @@ chaves.omawin` brings you the latest.
 
 ### Changed
 
-- **Install is off on ARM machines.** Omarchy 4.5 runs on ARM, where its
-  Windows VM can't (dockur's image is x86_64 only); the card says so instead
-  of opening an installer that fails.
+- **Install is off on ARM machines.** Omarchy 4.5 runs on ARM, but its
+  Windows VM is the x86_64 Windows 11 and refuses to install on anything
+  else; the card says so instead of opening an installer that fails.
 
 ### Added
 

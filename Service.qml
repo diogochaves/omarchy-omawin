@@ -102,9 +102,10 @@ QtObject {
         stop: allowed.stop && root.state !== "booting"
       })
     }
-    // omarchy-windows-vm runs dockur's x86_64 image and refuses other
-    // machines (Omarchy 4.5 runs on ARM too): Install, and Restore after
-    // Remove VM, would only open a terminal that fails.
+    // Omarchy 4.5 runs on ARM too, but its omarchy-windows-vm runs an x86_64
+    // Windows guest under KVM and exits on any other machine ("Windows VM
+    // needs an x86_64 machine"): Install, and Restore after Remove VM, would
+    // only open a terminal that fails.
     if (!root.x86) allowed = Object.assign({}, allowed, { install: false })
     return allowed
   }
