@@ -8,7 +8,8 @@ chaves.omawin` brings you the latest.
 ### Changed
 
 - **The card's main action stands out.** Start, Connect, Resume and Install…
-  wear the theme's accent, so the button you came for is the first you see.
+  are filled the way your theme marks a chosen option, so the button you
+  came for is the first you see.
   The header lost the cores · RAM · disk pill, which the rows below already
   say, and Settings shows Omawin's version in its title line.
 
