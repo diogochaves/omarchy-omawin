@@ -5,6 +5,13 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Changed
+
+- **The card's main action stands out.** Start, Connect, Resume and Install…
+  wear the theme's accent, so the button you came for is the first you see.
+  The header lost the cores · RAM · disk pill, which the rows below already
+  say, and Settings shows Omawin's version in its title line.
+
 ## 0.3.3 — 2026-10-20
 
 ### Changed

@@ -574,21 +574,16 @@ Panel {
         anchors.top: parent.top
         spacing: Style.space(14)
 
-        // ---------- Hero: glyph · Windows VM / STATUS · shape pill · gear -------
+        // ---------- Hero: glyph · Windows VM / STATUS · gear ----------
         // PanelHero has no per-line colour, so the whole hero goes urgent on
         // the failed card rather than only its status line. The alternative
         // was reimplementing the hero, which the kit asks us not to do.
         //
         // The sub-faces reuse it as they are: their own title under the same
-        // Windows mark, the pill for whatever they have to show there, and
-        // Back where the live faces have the gear: the way in and the way out
-        // share the top right. Esc does the same (see goBack()).
-        //
-        // The pill is ours, not the hero's `detail`: the hero puts `detail` on
-        // the title line but centres its trailing slot on the whole hero, so
-        // the gear sat half a line below the pill. Pill and gear now share the
-        // trailing slot and the kit centres them together. The pill copies
-        // the hero's own (BorderSurface, control border, dim bold body text).
+        // Windows mark, and Back where the live faces have the gear: the way
+        // in and the way out share the top right. Esc does the same (see
+        // goBack()). No pill: the stopped card's rows already say its cores,
+        // RAM and disk, and Settings carries the version in its meta line.
         PanelHero {
           id: hero
           title: root.live ? "Windows VM"
@@ -600,7 +595,7 @@ Panel {
             : "Settings"
           meta: root.live ? service.label
             : root.face === "login" ? "Windows VM · RDP and web viewer"
-            : root.face === "settings" ? "Windows VM"
+            : root.face === "settings" ? "Windows VM · Omawin " + root.pluginVersion
             : "Windows VM · " + service.label.toLowerCase()
           foreground: root.failed && root.live ? root.urgentColor : root.fg
           fontFamily: root.family
@@ -608,34 +603,7 @@ Panel {
           iconComponent: winHero
           trailingControl: Component {
             Row {
-              id: trailing
-              // Tune shows the shape on its first line instead: the header
-              // would not hold the pill and Back beside "Windows VM · stopped".
-              readonly property string pillText: root.live ? service.detail
-                : root.face === "settings" ? "Omawin " + root.pluginVersion
-                : ""
               spacing: Style.space(10)
-
-              BorderSurface {
-                visible: trailing.pillText !== ""
-                anchors.verticalCenter: parent.verticalCenter
-                implicitWidth: pillLabel.implicitWidth + Style.space(10)
-                implicitHeight: pillLabel.implicitHeight + Style.space(4)
-                color: "transparent"
-                borderSpec: Border.controlSpec("normal", hero.foreground, Commons.Color.accent)
-                radius: Style.cornerRadius
-
-                Text {
-                  id: pillLabel
-                  anchors.centerIn: parent
-                  textFormat: Text.PlainText
-                  text: trailing.pillText
-                  color: hero.dim
-                  font.family: root.family
-                  font.pixelSize: Style.font.body
-                  font.bold: true
-                }
-              }
 
               // The way into Settings from every live face.
               Button {
@@ -782,7 +750,7 @@ Panel {
             spacing: Style.spacing.labelGap
 
             // Cores and RAM come from the cache while the VM is off, the
-            // same values the hero's pill shows through service.detail.
+            // same values the bar tooltip shows through service.detail.
             InfoPair {
               visible: root.vmState === "stopped"
               label: "Cores"
@@ -983,13 +951,6 @@ Panel {
           foreground: root.fg
         }
 
-        PanelSectionHeader {
-          visible: root.live && root.vmState === "ready"
-          text: "ACTIONS"
-          foreground: root.fg
-          fontFamily: root.family
-        }
-
         Column {
           id: liveActions
           visible: root.live
@@ -1005,6 +966,7 @@ Panel {
               width: installRow.cellWidth
               iconText: root.termGlyph
               text: "Install…"
+              primary: true
               allowed: root.can("install")
               // The terminal is another window; while this popup holds keyboard focus
               // Hyprland will not hand it over, so close first (as the network panel does).
@@ -1023,6 +985,7 @@ Panel {
               width: stoppedRow.cellWidth
               iconText: root.playGlyph
               text: "Start"
+              primary: true
               allowed: root.can("start")
               onClicked: service.start()
             }
@@ -1114,6 +1077,7 @@ Panel {
               width: readyRow.cellWidth
               iconText: root.linkGlyph
               text: "Connect"
+              primary: true
               allowed: root.can("connect")
               onClicked: service.connect()
             }
@@ -1143,6 +1107,7 @@ Panel {
               width: pausedRow.cellWidth
               iconText: root.playGlyph
               text: "Resume"
+              primary: true
               allowed: root.can("resume")
               onClicked: service.resume()
             }
@@ -2238,7 +2203,12 @@ Panel {
   // bordered button at the mockup's 0.45 opacity with its input off.
   component ActionButton: Button {
     property bool allowed: false
+    // The one action the state is for (Start, Connect, Resume, Install…):
+    // the kit's selected paint, the accent-tinted fill its segmented
+    // controls give the chosen option, so it reads first in every theme.
+    property bool primary: false
 
+    selected: primary && allowed
     bordered: true
     fontSize: Style.font.caption
     iconSize: Style.font.bodySmall
