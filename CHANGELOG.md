@@ -48,6 +48,14 @@ chaves.omawin` brings you the latest.
   It asks for your password only when the backup's login or disk size
   differs, and cancelling that dialog changes nothing.
 
+- **Bring a removed VM back from a backup.** With no VM, the card shows
+  Restore… beside Install… when it finds a backup: beside where the VM was,
+  or at the top of a mounted drive. Restore puts it back where it was,
+  linking `~/.windows` to it again if it lived on another drive, and asks
+  for your password once. Backups now keep the VM's cores and RAM, so it
+  comes back with them. Its first Start downloads Omarchy's Windows image
+  again, which Remove VM deletes.
+
 ## 0.3.3 — 2026-10-20
 
 ### Changed

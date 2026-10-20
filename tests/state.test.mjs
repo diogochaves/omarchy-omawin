@@ -653,8 +653,17 @@ test('parseBackupList reads the helper lines and drops anything else', () => {
   assert.deepEqual(list.map(b => b.path), ['/mnt/data/windows.bak-2026-10-20',
     '/home/me/.windows.bak-2026-10-04', '/home/me/my files/.windows.bak-2026-10-03'])
   assert.deepEqual(list[0], { when: 1792505461, own: 0, measured: 'btrfs', same: true,
-    path: '/mnt/data/windows.bak-2026-10-20' })
+    disk: '', cores: 0, ram: '', path: '/mnt/data/windows.bak-2026-10-20' })
   assert.equal(list[2].own, -1)
+  const shaped = State.parseBackupList(
+    'when=1 own=0 measured=btrfs same=0 disk=64G cores=4 ram=8G path=/mnt/data/windows.bak-2026-10-20\n'
+    + 'when=1 own=0 measured=btrfs same=0 disk=x cores=0 ram=8 path=/mnt/data/windows.bak-2026-10-19\n')
+  assert.deepEqual(shaped.map(b => [b.disk, b.cores, b.ram]), [['64G', 4, '8G'], ['', 0, '']])
+  assert.deepEqual(State.freshShape(shaped[0]), { cores: 4, ram: '8G', disk: '64G', kept: true })
+  assert.deepEqual(State.freshShape(shaped[1]), { cores: 2, ram: '4G', disk: '', kept: false })
+  assert.equal(State.backupOrigin('/mnt/data/windows.bak-2026-10-20-2'), '/mnt/data/windows')
+  assert.equal(State.backupOrigin('/home/me/.windows.bak-2026-10-04'), '/home/me/.windows')
+  assert.equal(State.backupOrigin('/home/me/.windows'), '')
   assert.deepEqual(State.parseBackupList(undefined), [])
   assert.equal(State.sizeText(0), 'nothing')
   assert.equal(State.sizeText(-1), '—')

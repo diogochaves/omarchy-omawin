@@ -28,11 +28,18 @@ function box(t, { written = 1, credentials = true, under = os.tmpdir() } = {}) {
   fs.writeFileSync(path.join(windows, 'windows.ver'), '11\n')
   const creds = path.join(home, 'credentials')
   if (credentials) fs.writeFileSync(creds, 'USERNAME=chaves\nPASSWORD=secret\n', { mode: 0o600 })
+  // An installed VM: Omarchy's compose is there. The drives' folders are
+  // not searched, and the record of places is the throwaway home's.
+  const compose = path.join(home, 'docker-compose.yml')
+  fs.writeFileSync(compose, 'services: {}\n')
   return {
     home,
     env: {
       HOME: home, WINDOWS_DIR: windows, CREDENTIALS_FILE: creds, BACKUP_ROOT: home,
-      TODAY: '2026-10-04', FREE_BYTES: String(500 * 1024 ** 3), REFLINK: '0'
+      TODAY: '2026-10-04', FREE_BYTES: String(500 * 1024 ** 3), REFLINK: '0',
+      COMPOSE_FILE: compose, LEGACY_COMPOSE_FILE: path.join(home, 'no-legacy.yml'),
+      BACKUP_SEARCH: '', BACKUP_PLACES: path.join(home, 'state', 'backup-places'),
+      SHARED_DIR: path.join(home, 'Windows'), APPS_DIR: path.join(home, 'apps')
     }
   }
 }
@@ -296,13 +303,46 @@ test('list shows every backup, newest first, with its own size', t => {
   }
 })
 
-test('list with no backups is empty, and with no VM folder status 3', t => {
-  const { env } = box(t)
+test('list with no backups is empty, and lists them with no VM folder too', t => {
+  const { env, home } = box(t)
   const empty = helper('backup.sh', ['list'], env)
   assert.equal(empty.status, 0, empty.err)
   assert.equal(empty.out, '')
+  fakeBackup(path.join(home, '.windows.bak-2026-10-04'), 1791100000)
   fs.rmSync(env.WINDOWS_DIR, { recursive: true })
-  assert.equal(helper('backup.sh', ['list'], env).status, 3)
+  const gone = helper('backup.sh', ['list'], env)
+  assert.equal(gone.status, 0, gone.err)
+  assert.deepEqual(lines(gone.out).map(b => [path.basename(b.path), b.same]), [['.windows.bak-2026-10-04', '0']])
+})
+
+// Remove VM deletes the ~/.windows link that led to a backup on another
+// drive: the folder it went to is remembered, and the drives' tops are
+// looked in, so it is still listed.
+test('list finds backups where ~/.windows used to point, and on a drive', t => {
+  const { env, home } = box(t)
+  const drive = path.join(home, 'data')
+  fs.mkdirSync(drive)
+  fs.renameSync(env.WINDOWS_DIR, path.join(drive, 'windows'))
+  fs.symlinkSync(path.join(drive, 'windows'), env.WINDOWS_DIR)
+  const beside = { ...env }
+  delete beside.BACKUP_ROOT
+  assert.equal(helper('backup.sh', ['run', '--cores', '4', '--ram', '8G'], beside).status, 0)
+  // As Remove leaves it: the link gone, the folder it pointed to emptied.
+  fs.rmSync(env.WINDOWS_DIR)
+  fs.rmSync(path.join(drive, 'windows'), { recursive: true })
+  fs.mkdirSync(path.join(drive, 'windows'))
+  const result = helper('backup.sh', ['list'], beside)
+  assert.equal(result.status, 0, result.err)
+  const [b] = lines(result.out)
+  assert.equal(b.path, path.join(drive, 'windows.bak-2026-10-04'))
+  assert.deepEqual([b.disk, b.cores, b.ram], ['64G', '4', '8G'])
+  // With no record, a backup at the top of a drive is found all the same.
+  fs.rmSync(env.BACKUP_PLACES)
+  const other = path.join(home, 'usb')
+  fakeBackup(path.join(other, 'windows.bak-2026-10-01'), 1790900000)
+  const searched = helper('backup.sh', ['list'], { ...beside, BACKUP_SEARCH: `${drive} ${other}` })
+  assert.deepEqual(lines(searched.out).map(b => [path.basename(b.path), b.cores]),
+    [['windows.bak-2026-10-04', '4'], ['windows.bak-2026-10-01', '']])
 })
 
 test('on btrfs, list says a fresh backup holds next to nothing of its own', t => {
@@ -480,4 +520,101 @@ test('restore with the dialog dismissed puts the VM back as it was', t => {
   assert.deepEqual(fs.readdirSync(env.WINDOWS_DIR).sort(), ['data.img', 'windows.ver'])
   assert.deepEqual(fs.readdirSync(home).filter(n => /restoring|replaced|partial|errors/.test(n)), [])
   assert.ok(fs.existsSync(path.join(home, '.windows.bak-2026-10-04-2')), 'the safety backup stays')
+})
+
+// Restore after Remove VM: no compose, no login, the VM's folder empty or
+// gone. The backup goes back where it was made, the compose is written (the
+// dry run here) and the login and launcher entry come back.
+function removedBox(t, { onDrive = false } = {}) {
+  const made = box(t, { written: 2 })
+  const env = { ...made.env, RESTORE_DRY_RUN: '1', TZ_NAME: 'UTC' }
+  delete env.BACKUP_ROOT
+  let folder = env.WINDOWS_DIR
+  if (onDrive) {
+    folder = path.join(made.home, 'data', 'windows')
+    fs.mkdirSync(path.dirname(folder))
+    fs.renameSync(env.WINDOWS_DIR, folder)
+    fs.symlinkSync(folder, env.WINDOWS_DIR)
+  }
+  assert.equal(helper('backup.sh', ['run', '--cores', '4', '--ram', '8G'], env).status, 0)
+  const backup = path.join(path.dirname(folder), `${path.basename(folder)}.bak-2026-10-04`)
+  // As Omarchy's remove leaves it: the compose and login gone, the VM's
+  // folder emptied, ~/.windows deleted (an empty one may come back).
+  fs.rmSync(env.COMPOSE_FILE)
+  fs.rmSync(env.CREDENTIALS_FILE)
+  fs.rmSync(env.WINDOWS_DIR, { recursive: true })
+  if (onDrive) {
+    fs.rmSync(folder, { recursive: true })
+    fs.mkdirSync(folder)
+    fs.mkdirSync(env.WINDOWS_DIR, { mode: 0o700 })
+  }
+  return { env, home: made.home, backup, folder }
+}
+
+const steps = out => out.split('\n').filter(l => l.startsWith('step=')).map(l => l.slice(5))
+
+test('after Remove VM, restore brings the VM back where it was', t => {
+  const { env, home, backup } = removedBox(t)
+  const result = helper('backup.sh', ['restore', backup, '--cores', '4', '--ram', '8G', '--disk', '—'], env)
+  assert.equal(result.status, 0, result.err)
+  assert.deepEqual(steps(result.out), ['copy', 'swap', 'compose'])
+  assert.match(result.out, /dry run: compose not written \(RAM=8G CORES=4 DISK=64G USERNAME=chaves\)/)
+  assert.match(result.out, /\ncomposed=4 8G 64G\n/)
+  assert.match(result.out, new RegExp(`\\nrestored=${backup}$`))
+  assert.doesNotMatch(result.out, /done=/, 'no safety backup: there was nothing to save')
+  const image = path.join(env.WINDOWS_DIR, 'data.img')
+  assert.equal(firstByte(image), 7)
+  assert.equal(fs.statSync(image).size, 64 * 1024 ** 3)
+  assert.equal(fs.statSync(env.WINDOWS_DIR).mode & 0o777, 0o700)
+  assert.equal(fs.readFileSync(env.CREDENTIALS_FILE, 'utf8'), 'USERNAME=chaves\nPASSWORD=secret\n')
+  assert.equal(fs.statSync(env.CREDENTIALS_FILE).mode & 0o777, 0o600)
+  assert.match(fs.readFileSync(path.join(env.APPS_DIR, 'windows-vm.desktop'), 'utf8'), /Exec=uwsm app -- omarchy-windows-vm launch/)
+  assert.ok(fs.statSync(env.SHARED_DIR).isDirectory(), 'the Shared folder is back')
+  assert.equal(firstByte(path.join(backup, 'windows/data.img')), 7, 'the backup stays')
+  assert.deepEqual(fs.readdirSync(home).filter(n => /restoring|replaced|partial|errors/.test(n)), [])
+})
+
+test('after Remove VM, a VM that lived on another drive goes back there, linked', t => {
+  const { env, backup, folder } = removedBox(t, { onDrive: true })
+  const result = helper('backup.sh', ['restore', backup, '--cores', '2', '--ram', '4G'], env)
+  assert.equal(result.status, 0, result.err)
+  assert.equal(fs.readlinkSync(env.WINDOWS_DIR), folder)
+  assert.equal(firstByte(path.join(folder, 'data.img')), 7)
+  assert.deepEqual(fs.readdirSync(path.dirname(folder)).filter(n => /restoring/.test(n)), [])
+})
+
+test('after Remove VM, a dismissed dialog takes the restore away again', t => {
+  const { env, backup, folder } = removedBox(t, { onDrive: true })
+  const result = helper('backup.sh', ['restore', backup, '--cores', '2', '--ram', '4G'],
+    { ...env, RESTORE_DRY_RUN: 'dismiss' })
+  assert.equal(result.status, 1)
+  assert.match(result.err, /Request dismissed/)
+  assert.doesNotMatch(result.out, /restored=|composed=/)
+  // As it was: an empty ~/.windows, an empty folder on the drive, no login.
+  assert.ok(!fs.lstatSync(env.WINDOWS_DIR).isSymbolicLink())
+  assert.deepEqual(fs.readdirSync(env.WINDOWS_DIR), [])
+  assert.deepEqual(fs.readdirSync(folder), [])
+  assert.equal(fs.existsSync(env.CREDENTIALS_FILE), false)
+  assert.equal(fs.existsSync(path.join(env.APPS_DIR, 'windows-vm.desktop')), false)
+  assert.equal(firstByte(path.join(backup, 'windows/data.img')), 7)
+})
+
+test('after Remove VM, restore refuses a folder in use, a backup with no login and no shape', t => {
+  const { env, backup } = removedBox(t)
+  const args = ['restore', backup, '--cores', '2', '--ram', '4G']
+  const shapeless = helper('backup.sh', ['restore', backup], env)
+  assert.equal(shapeless.status, 2)
+  assert.match(shapeless.err, /needs --cores/)
+  fs.mkdirSync(env.WINDOWS_DIR)
+  fs.writeFileSync(path.join(env.WINDOWS_DIR, 'notes.txt'), 'mine\n')
+  const busy = helper('backup.sh', args, env)
+  assert.equal(busy.status, 2)
+  assert.match(busy.err, /already holds files/)
+  assert.equal(fs.readFileSync(path.join(env.WINDOWS_DIR, 'notes.txt'), 'utf8'), 'mine\n')
+  fs.rmSync(env.WINDOWS_DIR, { recursive: true })
+  fs.rmSync(path.join(backup, 'credentials'))
+  const loginless = helper('backup.sh', args, env)
+  assert.equal(loginless.status, 2)
+  assert.match(loginless.err, /has no login/)
+  assert.equal(fs.existsSync(env.WINDOWS_DIR), false)
 })

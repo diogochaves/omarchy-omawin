@@ -6,17 +6,23 @@
 #                            ok=1 reflink=1 same=1 used=24696061952
 #                            free=1616073883648 target=windows.bak-2026-10-04
 #                            last=1790812800 where=/mnt/data
-#   helpers/backup.sh run    makes that copy: `copied=<bytes>` lines while it
-#                            runs, then `done=<full path>`; SIGTERM cancels it
-#   helpers/backup.sh list   one line per backup on disk, newest first:
+#   helpers/backup.sh run [--cores N --ram NG]
+#                            makes that copy: `copied=<bytes>` lines while it
+#                            runs, then `done=<full path>`; SIGTERM cancels it.
+#                            The cores and RAM given are kept in it, for a
+#                            restore after Remove VM
+#   helpers/backup.sh list   one line per backup on disk, newest first, VM or
+#                            not:
 #                            when=1792504162 own=0 measured=btrfs same=1
+#                            disk=64G cores=4 ram=8G
 #                            path=/mnt/data/windows.bak-2026-10-20
 #   helpers/backup.sh delete PATH
 #                            deletes that backup, and only a folder `list`
 #                            shows: `deleted=<path>`
 #   helpers/backup.sh restore PATH --cores N --ram NG --disk NG
 #                            puts that backup back as the VM (see "Restore"
-#                            below): `step=` and `copied=` lines while it
+#                            below, and "Restore after Remove VM" when there
+#                            is no VM): `step=` and `copied=` lines while it
 #                            works, `done=<safety backup>` once that is made,
 #                            `composed=<cores> <ram> <disk>` if it rewrote the
 #                            compose, then `restored=<path>`; SIGTERM cancels
@@ -39,10 +45,16 @@
 #   own       bytes only it holds, what deleting it frees: btrfs's exclusive
 #             size where the filesystem shares blocks (`measured=btrfs`), else
 #             its plain size (`measured=du`)
-#   same      on the VM's filesystem (1/0)
+#   same      on the VM's filesystem (1/0); 0 when there is no VM
+#   disk      its data.img's apparent size, 64G, or empty
+#   cores ram the shape it was made with, when it kept one, else empty
 #   path      the backup folder
 # A backup is a <name>.bak-<date> folder holding windows/data.img, beside the
-# VM's folder or in $HOME; half-made `.partial` folders are not listed.
+# VM's folder, in $HOME, in a folder an earlier backup went to (kept in
+# $XDG_STATE_HOME/omawin/backup-places, so they are still found once Remove
+# VM has taken the ~/.windows link that pointed there), or at the top of a
+# mounted drive (/mnt/*, /media/$USER/*, /run/media/$USER/*). Half-made
+# `.partial` folders are not listed.
 #
 # Where: beside the VM's real folder, so on its filesystem and a reflink copy
 # wherever it allows one. ~/.windows is usually that folder, and the backup is
@@ -62,6 +74,8 @@
 #
 #   windows/      a copy of everything in ~/.windows, data.img included
 #   credentials   a copy of ~/.config/windows/credentials (0600), if there is one
+#   shape         CORES= and RAM= lines, the shape the VM had, when the card
+#                 knew it
 #
 # which is what the README's "Restoring a backed-up VM" puts back. It is made
 # as the user: everything in ~/.windows is theirs, nothing needs root. The VM
@@ -112,6 +126,26 @@
 # argument. The card passes the cores, RAM and disk the next start would use,
 # as Login's Save does: write_compose takes all six fields.
 #
+# Restore after Remove VM, when there is no compose: nothing is there to
+# save, so no safety backup, and the backup goes back where it was made, by
+# its name (/mnt/data/windows.bak-2026-10-20 to /mnt/data/windows,
+# ~/.windows.bak-2026-10-04 to ~/.windows). That folder must be empty or
+# missing. When it isn't ~/.windows itself, ~/.windows becomes a link to it
+# again, as it was (Remove deletes the link): an empty folder there is
+# replaced, anything else refuses.
+#
+#   1. the backup's windows/ copied into a hidden folder beside where it goes,
+#      then moved in
+#   2. ~/.windows linked there when it has to be, and ~/Windows (the Shared
+#      folder) made if Remove took it
+#   3. the compose written, always (the one dialog), with the backup's login
+#      and disk and the cores and RAM the card passes; a dismissed dialog or
+#      a failure takes all of it away again, the backup untouched
+#   4. the credentials file and the launcher's Windows entry, as Install
+#      writes them
+#
+# Omarchy's image is fetched again by the first Start, as Remove deleted it.
+#
 # Environment (all optional, the defaults are the real system):
 #   WINDOWS_DIR       the VM's storage      (default ~/.windows)
 #   CREDENTIALS_FILE  the login             (default ~/.config/windows/credentials)
@@ -119,6 +153,13 @@
 #   TODAY             the date in the name  (default today, YYYY-MM-DD)
 #   FREE_BYTES, REFLINK  override the two readings, for the tests
 #   VM_RUNNING        =1/0 instead of asking vm-state.sh, for the tests
+#   COMPOSE_FILE, LEGACY_COMPOSE_FILE  Omarchy's compose, whose presence
+#                     means a VM is installed (defaults as vm-state.sh's)
+#   SHARED_DIR        the Shared folder     (default ~/Windows)
+#   APPS_DIR          the launcher entries  (default ~/.local/share/applications)
+#   BACKUP_PLACES     the record of folders backups went to
+#   BACKUP_SEARCH     the drives' folders to look in, space-separated, instead
+#                     of /mnt/*, /media/$USER/*, /run/media/$USER/*
 #   TZ_NAME           skip timedatectl, use this value
 #   RESTORE_DRY_RUN   =1 skips the pkexec step and says what it would write;
 #                     =dismiss answers as a dismissed dialog would
@@ -130,6 +171,13 @@ export LC_ALL=C
 
 windows=${WINDOWS_DIR:-$HOME/.windows}
 credentials=${CREDENTIALS_FILE:-$HOME/.config/windows/credentials}
+compose_file=${COMPOSE_FILE:-/var/lib/omarchy/windows/docker-compose.yml}
+legacy_compose=${LEGACY_COMPOSE_FILE:-$HOME/.config/windows/docker-compose.yml}
+shared=${SHARED_DIR:-$HOME/Windows}
+apps=${APPS_DIR:-$HOME/.local/share/applications}
+places=${BACKUP_PLACES:-${XDG_STATE_HOME:-$HOME/.local/state}/omawin/backup-places}
+shape_cores=
+shape_ram=
 root=
 base=.windows
 today=${TODAY:-$(/usr/bin/date +%F)}
@@ -259,28 +307,72 @@ own_size() {
   printf '%s du' "$bytes"
 }
 
-# Every backup on disk, beside the VM's folder and in $HOME, newest first.
+# A folder backups went to, kept so they are found after Remove VM has
+# deleted the ~/.windows link that led there. Best effort: a record that
+# can't be written loses nothing but that.
+remember_place() {
+  local dir=$1
+  [[ $dir == /* && $dir != *$'\n'* && -d $dir ]] || return 0
+  /usr/bin/grep -qxF -- "$dir" "$places" 2>/dev/null && return 0
+  /usr/bin/mkdir -p -- "${places%/*}" 2>/dev/null &&
+    printf '%s\n' "$dir" >>"$places" 2>/dev/null
+  return 0
+}
+
+# The folders a backup can be in: beside the VM, $HOME, the recorded ones,
+# and the top of each mounted drive.
+search_dirs() {
+  local -a drives
+  printf '%s\n' "$root" "$HOME"
+  [[ -f $places ]] && /usr/bin/head -n 50 -- "$places"
+  if [[ -n ${BACKUP_SEARCH+x} ]]; then
+    read -ra drives <<<"$BACKUP_SEARCH"
+  else
+    drives=(/mnt/* /media/"${USER-}"/* /run/media/"${USER-}"/*)
+  fi
+  printf '%s\n' "${drives[@]}"
+}
+
+# Every backup on disk, newest first: a <name>.bak-<date> folder holding
+# windows/data.img, in one of those folders.
 backups() {
-  local dir seen=
-  for dir in "$root/$base".bak-* "$HOME"/.windows.bak-*; do
-    [[ $dir == *.partial || ! -d $dir || -L $dir || ! -f $dir/windows/data.img ]] && continue
-    [[ $dir == *$'\n'* ]] && continue
-    [[ $seen == *$'\n'"$dir"$'\n'* ]] && continue
-    seen+=$'\n'"$dir"$'\n'
-    printf '%s\t%s\n' "$(/usr/bin/stat -c %Y -- "$dir" 2>/dev/null || echo 0)" "$dir"
-  done | /usr/bin/sort -rn -k1,1
+  local place dir seen=
+  while IFS= read -r place; do
+    [[ $place == /* && -d $place ]] || continue
+    for dir in "$place"/*.bak-* "$place"/.*.bak-*; do
+      [[ ${dir##*/} =~ ^\.?[A-Za-z0-9_][A-Za-z0-9._-]{0,63}\.bak-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]{1,2})?$ ]] || continue
+      [[ ! -d $dir || -L $dir || ! -f $dir/windows/data.img ]] && continue
+      dir=${dir//\/\//\/}
+      [[ $seen == *$'\n'"$dir"$'\n'* ]] && continue
+      seen+=$'\n'"$dir"$'\n'
+      printf '%s\t%s\n' "$(/usr/bin/stat -c %Y -- "$dir" 2>/dev/null || echo 0)" "$dir"
+    done
+  done < <(search_dirs) | /usr/bin/sort -rn -k1,1
+}
+
+# One field of a backup's shape file, if it kept a valid one.
+shape_of() {
+  local value
+  value=$(credential_of "$1/shape" "$2") || return 0
+  case $2 in
+    CORES) [[ $value =~ ^[0-9]{1,2}$ ]] && ((10#$value >= 1)) && printf '%s' "$value" ;;
+    RAM) [[ $value =~ ^[0-9]{1,3}G$ ]] && printf '%s' "$value" ;;
+  esac
+  return 0
 }
 
 print_list() {
-  [[ -d $windows ]] || nothing_yet "nothing to list: there is no $windows"
   choose_root
-  local when dir own measured same vm
-  vm=$(/usr/bin/stat -c %d -- "$windows/." 2>/dev/null)
+  [[ -d $windows ]] && remember_place "$root"
+  local when dir own measured same vm=
+  [[ -d $windows ]] && vm=$(/usr/bin/stat -c %d -- "$windows/." 2>/dev/null)
   while IFS=$'\t' read -r when dir; do
     read -r own measured <<<"$(own_size "$dir" || echo "")"
     same=0
     [[ -n $vm && $(/usr/bin/stat -c %d -- "$dir" 2>/dev/null) == "$vm" ]] && same=1
-    printf 'when=%s own=%s measured=%s same=%s path=%s\n' "$when" "$own" "$measured" "$same" "$dir"
+    printf 'when=%s own=%s measured=%s same=%s disk=%s cores=%s ram=%s path=%s\n' \
+      "$when" "$own" "$measured" "$same" "$(image_disk "$dir/windows/data.img")" \
+      "$(shape_of "$dir" CORES)" "$(shape_of "$dir" RAM)" "$dir"
   done < <(backups)
 }
 
@@ -288,17 +380,18 @@ print_list() {
 # (the VM's own folder, a half-made copy, a symlink, a folder that merely
 # looks like one) can be passed in.
 delete_backup() {
-  local target=${1-} dir found= real vm
+  local target=${1-} dir found= real vm=
   [[ -n $target ]] || die "usage: backup.sh delete PATH"
-  [[ -d $windows ]] || nothing_yet "nothing to delete: there is no $windows"
   choose_root
   while IFS=$'\t' read -r _ dir; do
     [[ $dir == "$target" ]] && found=1
   done < <(backups)
   [[ -n $found ]] || die "not a backup: $target"
   real=$(/usr/bin/realpath -e -- "$target" 2>/dev/null) || die "cannot read $target"
-  vm=$(/usr/bin/realpath -e -- "$windows" 2>/dev/null) || die "cannot read $windows"
-  [[ $real != "$vm" && $vm != "$real"/* ]] || die "refusing to delete the VM itself: $target"
+  if [[ -e $windows ]]; then
+    vm=$(/usr/bin/realpath -e -- "$windows" 2>/dev/null) || die "cannot read $windows"
+    [[ $real != "$vm" && $vm != "$real"/* ]] || die "refusing to delete the VM itself: $target"
+  fi
   /usr/bin/rm -rf -- "$real" || die "could not delete $target"
   printf 'deleted=%s\n' "$target"
 }
@@ -394,6 +487,199 @@ abandon_restore() {
   return 0
 }
 
+# The backup's windows/ copied into a hidden folder in $2 named for $3, +C
+# when its data.img is, so on btrfs it shares the backup's blocks: `copied=`
+# lines while it runs. A failure removes the copy and exits.
+stage_backup() {
+  local src=$1 parent=$2 name=$3
+  echo "step=copy"
+  local old_umask errors status=0
+  staging=$parent/.$name.restoring
+  [[ ! -e $staging ]] || /usr/bin/rm -rf -- "$staging"
+  old_umask=$(umask)
+  umask 077
+  /usr/bin/mkdir -- "$staging" || die "cannot make $staging"
+  umask "$old_umask"
+  local flags
+  flags=$(/usr/bin/lsattr -d -- "$src/data.img" 2>/dev/null) && [[ ${flags%% *} == *C* ]] && set_nocow "$staging"
+  errors=$staging.errors
+  /usr/bin/cp -a --reflink=auto --sparse=always -- "$src/." "$staging/" 2>"$errors" &
+  copy_pid=$!
+  while kill -0 "$copy_pid" 2>/dev/null; do
+    printf 'copied=%s\n' "$(occupied "$staging" || echo 0)"
+    /usr/bin/sleep 1 &
+    wait $! 2>/dev/null
+  done
+  wait "$copy_pid" || status=$?
+  copy_pid=
+  if ((status != 0)); then
+    local why
+    why=$(/usr/bin/tail -n 1 -- "$errors" 2>/dev/null)
+    /usr/bin/rm -f -- "$errors"
+    abandon_restore
+    die "copying the backup failed: ${why:-cp exited with status $status}"
+  fi
+  /usr/bin/rm -f -- "$errors"
+}
+
+# A VM is installed while Omarchy's compose is there, the old one in
+# ~/.config/windows included, as vm-state.sh counts it.
+installed() {
+  [[ -e $compose_file || -e $legacy_compose ]]
+}
+
+# The folder a backup was made beside, by its name: windows.bak-2026-10-20-2
+# came from windows, .windows.bak-2026-10-04 from .windows.
+origin_of() {
+  local name=${1##*/}
+  [[ $name =~ ^(.+)\.bak-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]{1,2})?$ ]] || return 1
+  printf '%s/%s' "${1%/*}" "${BASH_REMATCH[1]}"
+}
+
+empty_dir() {
+  [[ -d $1 && ! -L $1 && -z $(/usr/bin/find "$1" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null) ]]
+}
+
+# The launcher's Windows entry, as Omarchy's install writes it.
+write_launcher() {
+  [[ -e $apps/windows-vm.desktop ]] && return 0
+  /usr/bin/mkdir -p -- "$apps" || return 1
+  printf '%s\n' '[Desktop Entry]' 'Name=Windows' \
+    'Comment=Start Windows VM via Docker and connect with RDP' \
+    'Exec=uwsm app -- omarchy-windows-vm launch' 'Icon=windows' 'Terminal=false' \
+    'Type=Application' 'Categories=System;Virtualization;' >"$apps/windows-vm.desktop"
+}
+
+# Undoing a restore after Remove VM that did not finish: the copy put in
+# place goes (the folder was empty or missing before), and so does the link.
+dest=
+made_dest=0
+made_link=0
+emptied=0
+undo_fresh() {
+  if ((made_link)); then
+    /usr/bin/rm -f -- "$windows"
+    made_link=0
+  fi
+  if ((emptied)); then
+    ( umask 077 && /usr/bin/mkdir -- "$windows" )
+    emptied=0
+  fi
+  if [[ -n $dest && -d $dest ]]; then
+    if ((made_dest)); then
+      /usr/bin/rm -rf -- "$dest"
+    else
+      /usr/bin/find "$dest" -mindepth 1 -maxdepth 1 -exec /usr/bin/rm -rf -- {} +
+    fi
+  fi
+  dest=
+  abandon_restore
+}
+
+restore_fresh() {
+  local chosen=$1 cores=$2 ram=$3 src=$1/windows origin parent name link=0
+  # shellcheck disable=SC2015 # both halves are tests; die exits
+  [[ $cores =~ ^[0-9]{1,2}$ ]] && ((10#$cores >= 1)) || die "usage: restoring with no VM needs --cores N"
+  [[ $ram =~ ^[0-9]{1,3}G$ ]] || die "usage: restoring with no VM needs --ram NG"
+  origin=$(origin_of "$chosen") || die "not a backup's name: $chosen"
+
+  local bu bp bdisk
+  bdisk=$(image_disk "$src/data.img") || die "the backup's disk is not a whole number of GB"
+  [[ -f $chosen/credentials ]] || die "this backup has no login, so it can't bring the VM back by itself: Install… makes a new one"
+  bu=$(credential_of "$chosen/credentials" USERNAME) || die "the backup's credentials have no USERNAME"
+  bp=$(credential_of "$chosen/credentials" PASSWORD) || die "the backup's credentials have no PASSWORD"
+  login_ok "$bu" "$bp" || die "the backup's login is not one Omarchy can use"
+
+  # Where it goes: the folder it was made beside, empty or missing. When that
+  # isn't ~/.windows itself, ~/.windows has to be free to link to it again.
+  if [[ $origin != "$windows" ]]; then
+    if [[ -L $windows ]]; then
+      [[ $(/usr/bin/realpath -m -- "$windows") == "$(/usr/bin/realpath -m -- "$origin")" ]] ||
+        die "$windows links somewhere else; remove that link first"
+    elif [[ -e $windows ]]; then
+      empty_dir "$windows" || die "$windows already holds files; move them away first"
+      link=1
+    else
+      link=1
+    fi
+  fi
+  if [[ -e $origin || -L $origin ]]; then
+    empty_dir "$origin" || die "$origin already holds files; move them away first"
+    [[ -O $origin ]] || die "$origin is not yours"
+  fi
+  parent=${origin%/*}
+  name=${origin##*/}
+  [[ -d $parent && -w $parent ]] || die "cannot write in $parent"
+
+  # Room: nothing when the copy can share the backup's blocks.
+  local staged need free
+  staged=$(occupied "$src/.") || die "cannot read the size of $src"
+  need=$((staged + spare))
+  [[ $(/usr/bin/stat -c %d -- "$src/." 2>/dev/null) == $(/usr/bin/stat -c %d -- "$parent/." 2>/dev/null) ]] &&
+    [[ $(/usr/bin/stat -f -c %T -- "$parent/." 2>/dev/null) == btrfs || $(/usr/bin/stat -f -c %T -- "$parent/." 2>/dev/null) == xfs ]] &&
+    need=$spare
+  root=$parent
+  free=$(free_bytes)
+  [[ $free =~ ^[0-9]{1,19}$ ]] || die "cannot read the free space in $parent"
+  ((free >= need)) || die "not enough room: putting the backup back needs $((need / spare)) GB free in $parent, it has $((free / spare)) GB"
+
+  # 1. the copy, then in place
+  trap 'abandon_restore; exit 130' TERM INT HUP
+  stage_backup "$src" "$parent" "$name"
+  trap '' TERM INT HUP
+  echo "step=swap"
+  dest=$origin
+  if [[ -d $dest ]]; then
+    move_entries "$staging" "$dest" || { undo_fresh; die "could not put the backup in $dest"; }
+    /usr/bin/rmdir -- "$staging"
+  else
+    /usr/bin/mv -T -- "$staging" "$dest" || { undo_fresh; die "could not put the backup in $dest"; }
+    made_dest=1
+  fi
+  staging=
+  /usr/bin/chmod 0700 -- "$dest"
+
+  # 2. the link, and the Shared folder
+  if ((link)); then
+    if [[ -d $windows ]]; then
+      /usr/bin/rmdir -- "$windows" || { undo_fresh; die "could not replace the empty $windows with a link"; }
+      emptied=1
+    fi
+    /usr/bin/ln -s -- "$dest" "$windows" || { undo_fresh; die "could not link $windows to $dest"; }
+    made_link=1
+  fi
+  if [[ ! -e $shared && ! -L $shared ]]; then
+    ( umask 077 && /usr/bin/mkdir -p -- "$shared" ) || { undo_fresh; die "could not make $shared"; }
+  fi
+
+  # 3. the compose, the one dialog
+  echo "step=compose"
+  local status=0 message=
+  if [[ ${RESTORE_DRY_RUN-} == 1 ]]; then
+    echo "dry run: compose not written (RAM=$ram CORES=$cores DISK=$bdisk USERNAME=$bu)"
+  elif [[ ${RESTORE_DRY_RUN-} == dismiss ]]; then
+    message="Error executing command as another user: Request dismissed"
+    status=126
+  else
+    message=$(printf 'RAM=%s\nCORES=%s\nDISK=%s\nUSERNAME=%s\nPASSWORD=%s\nTZ=%s\n' \
+      "$ram" "$cores" "$bdisk" "$bu" "$bp" "$(timezone)" |
+      /usr/bin/pkexec /usr/bin/omarchy-windows-vm __priv write_compose 2>&1 >/dev/null) ||
+      status=$?
+  fi
+  if ((status != 0)); then
+    undo_fresh
+    printf '%s\n' "${message:-write_compose exited with status $status}" | /usr/bin/head -c 2048 >&2
+    exit 1
+  fi
+  printf 'composed=%s %s %s\n' "$cores" "$ram" "$bdisk"
+
+  # 4. the login and the launcher entry
+  save_login "$bu" "$bp" || die "the VM is back but $credentials could not be written: copy the backup's credentials file there"
+  write_launcher || echo "the launcher's Windows entry could not be written; the card starts the VM all the same" >&2
+  trap - TERM INT HUP
+  printf 'restored=%s\n' "$chosen"
+}
+
 restore_backup() {
   local chosen= cores= ram= disk=
   chosen=${1-}
@@ -414,13 +700,20 @@ restore_backup() {
     shift
   done
   [[ -n $chosen ]] || die "usage: backup.sh restore PATH --cores N --ram NG --disk NG"
-  [[ -d $windows && -f $windows/data.img ]] || nothing_yet "nothing to restore over: $windows has no data.img"
   choose_root
   local dir found=
   while IFS=$'\t' read -r _ dir; do
     [[ $dir == "$chosen" ]] && found=1
   done < <(backups)
   [[ -n $found ]] || die "not a backup: $chosen"
+  # The safety backup keeps the shape the VM has.
+  shape_cores=$cores
+  shape_ram=$ram
+  if ! installed; then
+    restore_fresh "$chosen" "$cores" "$ram"
+    return
+  fi
+  [[ -d $windows && -f $windows/data.img ]] || nothing_yet "nothing to restore over: $windows has no data.img"
   vm_running && die "stop the VM first: a disk Windows is using can't be swapped"
 
   local src=$chosen/windows real parent name
@@ -471,34 +764,7 @@ restore_backup() {
   trap 'abandon_restore; exit 130' TERM INT HUP
 
   # 2. the backup, staged beside the VM
-  echo "step=copy"
-  local old_umask errors status=0
-  staging=$parent/.$name.restoring
-  [[ ! -e $staging ]] || /usr/bin/rm -rf -- "$staging"
-  old_umask=$(umask)
-  umask 077
-  /usr/bin/mkdir -- "$staging" || die "cannot make $staging"
-  umask "$old_umask"
-  local flags
-  flags=$(/usr/bin/lsattr -d -- "$src/data.img" 2>/dev/null) && [[ ${flags%% *} == *C* ]] && set_nocow "$staging"
-  errors=$staging.errors
-  /usr/bin/cp -a --reflink=auto --sparse=always -- "$src/." "$staging/" 2>"$errors" &
-  copy_pid=$!
-  while kill -0 "$copy_pid" 2>/dev/null; do
-    printf 'copied=%s\n' "$(occupied "$staging" || echo 0)"
-    /usr/bin/sleep 1 &
-    wait $! 2>/dev/null
-  done
-  wait "$copy_pid" || status=$?
-  copy_pid=
-  if ((status != 0)); then
-    local why
-    why=$(/usr/bin/tail -n 1 -- "$errors" 2>/dev/null)
-    /usr/bin/rm -f -- "$errors"
-    abandon_restore
-    die "copying the backup failed: ${why:-cp exited with status $status}"
-  fi
-  /usr/bin/rm -f -- "$errors"
+  stage_backup "$src" "$parent" "$name"
   # From here nothing is half-done for long: no cancel.
   trap '' TERM INT HUP
 
@@ -659,6 +925,12 @@ run() {
     }
     /usr/bin/chmod 0600 -- "$partial/credentials"
   fi
+  if [[ $shape_cores =~ ^[0-9]{1,2}$ && $shape_ram =~ ^[0-9]{1,3}G$ ]]; then
+    printf 'CORES=%s\nRAM=%s\n' "$shape_cores" "$shape_ram" >"$partial/shape" || {
+      abandon
+      die "could not write $partial/shape"
+    }
+  fi
 
   /usr/bin/mv -T -- "$partial" "$root/$target" || {
     abandon
@@ -666,12 +938,32 @@ run() {
   }
   partial=
   trap - TERM INT HUP
+  remember_place "$root"
   printf 'done=%s\n' "$root/$target"
+}
+
+# `run`'s and `restore`'s --cores and --ram, what a backup keeps as its shape.
+shape_args() {
+  while (($#)); do
+    case $1 in
+      --cores | --ram)
+        (($# >= 2)) || die "$1 needs a value"
+        [[ $1 == --cores ]] && shape_cores=$2 || shape_ram=$2
+        shift
+        ;;
+      *) die "unknown option: $1" ;;
+    esac
+    shift
+  done
 }
 
 case ${1-} in
   plan) print_plan ;;
-  run) run ;;
+  run)
+    shift
+    shape_args "$@"
+    run
+    ;;
   list) print_list ;;
   delete) delete_backup "${2-}" ;;
   restore)

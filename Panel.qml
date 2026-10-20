@@ -100,6 +100,8 @@ Panel {
   // card that is the state underneath. The compose can only be rewritten here,
   // so it gates Tune, Update password and both of their faces.
   readonly property bool stoppedFace: root.stateFace === "stopped"
+  // No VM: Install…, or Restore… from a backup Remove VM left behind.
+  readonly property bool freshFace: root.stateFace === "not-installed"
   // docker.service reported and not running: the one case the stopped card
   // mentions Docker at all. An empty reading is a sampler that hasn't said.
   readonly property bool dockerDown: service.sample.docker !== "" && !service.dockerActive
@@ -373,7 +375,8 @@ Panel {
     // that is off. Their buttons can only reach them then, but the IPC `face`
     // can be asked for one at any time: it gets the card instead.
     if (!root.stoppedFace
-      && (name === "tune" || name === "updatePassword" || name === "remove" || name === "restore"))
+      && (name === "tune" || name === "updatePassword" || name === "remove"
+        || (name === "restore" && !root.freshFace)))
       name = "live"
     if (name === "tune") {
       if (root.face !== "tune") root.tuneFrom = root.face === "settings" ? "settings" : "live"
@@ -404,7 +407,7 @@ Panel {
     if (name === "backup") {
       // Back from Restore keeps the way Backups was entered.
       if (root.face !== "restore" && root.face !== "backup")
-        root.backupFrom = root.face === "tune" || root.face === "remove" ? root.face : "settings"
+        root.backupFrom = root.face === "tune" || root.face === "remove" || root.face === "live" ? root.face : "settings"
       // A finished or failed copy is shown once; the next visit starts over.
       if (!service.backupProc.running) service.clearBackup()
       service.readBackupPlan()
@@ -445,10 +448,12 @@ Panel {
   onVmStateChanged: {
     if (!root.stoppedFace
       && (root.face === "tune" || root.face === "updatePassword" || root.face === "remove"
-        || (root.face === "restore" && !service.restoreProc.running))) {
+        || (root.face === "restore" && !service.restoreProc.running && !root.freshFace))) {
       root.dropPasswordField()
       root.face = "live"
     }
+    // A VM just removed may have left backups: the card offers Restore….
+    if (root.freshFace) service.readBackups()
   }
 
   implicitWidth: button.implicitWidth
@@ -463,6 +468,9 @@ Panel {
       // So can bindings.lua, which the Key row and Settings read.
       service.readRule()
       service.readKey()
+      // With no VM, the card offers Restore… beside Install… when a backup
+      // is there to restore.
+      if (root.freshFace) service.readBackups()
     } else {
       // A closed card keeps nothing: back to the live face, and the revealed
       // password is dropped rather than waiting out its 15 s, as is one typed
@@ -775,6 +783,8 @@ Panel {
           text: {
             if (root.vmState === "not-installed")
               return "No Windows VM on this machine. The installer asks for RAM, cores, disk size and a login, then downloads Windows 11 (10–15 min). It runs in a floating terminal."
+                + (service.backupList.length === 1 ? " Restore… brings back the backup you have instead."
+                  : service.backupList.length > 1 ? " Restore… brings back one of your " + service.backupList.length + " backups instead." : "")
             if (root.vmState === "starting")
               return "Bringing the container up. Omarchy may ask for authorisation."
             // Past State.BOOT_PATIENCE_MS: why RDP may never answer.
@@ -978,9 +988,11 @@ Panel {
         // for a write that went through (the kit has no "ok" token — accent is
         // its positive colour), the urgent one quoting the helper's own stderr
         // for one that did not. It is not the failed card: a refused compose
-        // rewrite changed nothing about the VM.
+        // rewrite changed nothing about the VM. Restore's own face says its
+        // outcome already; the banner is for the card it lands on after.
         BannerBox {
           visible: service.noticeText !== "" && root.face !== "settings" && root.face !== "remove"
+            && root.face !== "restore"
           text: service.noticeText
           accentColor: service.noticeOk ? Commons.Color.accent : root.urgentColor
         }
@@ -1022,10 +1034,12 @@ Panel {
           spacing: Style.space(6)
 
           // not-installed
+          // A backup Remove VM left behind can come back instead: Restore…
+          // opens the list.
           ActionRow {
             id: installRow
             visible: root.stateFace === "not-installed"
-            cells: 1
+            cells: service.backupList.length > 0 ? 2 : 1
             ActionButton {
               width: installRow.cellWidth
               iconText: root.termGlyph
@@ -1035,6 +1049,14 @@ Panel {
               // The terminal is another window; while this popup holds keyboard focus
               // Hyprland will not hand it over, so close first (as the network panel does).
               onClicked: { service.install(); root.close() }
+            }
+            ActionButton {
+              visible: service.backupList.length > 0
+              width: installRow.cellWidth
+              iconText: root.restoreGlyph
+              text: "Restore…"
+              allowed: root.can("install") && !service.busy
+              onClicked: root.openFace("backup")
             }
           }
 
@@ -1642,7 +1664,7 @@ Panel {
             danger: true
             value: service.currentDisk !== "" ? service.currentDisk + " disk" : ""
             tip: root.stoppedFace
-              ? "Deletes Windows and everything in it. The Shared folder and backups stay. Install… starts a fresh one."
+              ? "Deletes Windows and everything in it. The Shared folder and backups stay. Install… starts a fresh one; Restore… brings a backup back."
               : "Stop the VM to remove it. To back up first, Connect and copy your files to the Shared folder."
             allowed: root.can("remove")
             onActivated: root.openFace("remove")
@@ -1932,12 +1954,14 @@ Panel {
             width: parent.width
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            color: !root.stoppedFace ? root.warnColor
+            color: root.freshFace ? root.dim
+              : !root.stoppedFace ? root.warnColor
               : service.backupError !== "" || service.backupPlanError !== ""
               || (backupFace.plan && !backupFace.plan.ok) ? root.urgentColor : root.dim
             font.family: root.family
             font.pixelSize: Style.font.caption
-            text: !root.stoppedFace ? "Stop the VM to back it up: a copy of a disk Windows is writing to would be torn. You can still look at the backups below."
+            text: root.freshFace ? "There's no VM now. Restore… brings one of these back as it was, where it was."
+              : !root.stoppedFace ? "Stop the VM to back it up: a copy of a disk Windows is writing to would be torn. You can still look at the backups below."
               : service.backupError !== "" ? "The backup failed: " + service.backupError
               : service.backupNothingYet ? "Nothing to back up yet: Windows makes its disk the first time it starts. Start it once, then come back."
               : service.backupPlanError !== "" ? "Couldn't read the VM's size: " + service.backupPlanError
@@ -2088,7 +2112,8 @@ Panel {
             color: root.dim
             font.family: root.family
             font.pixelSize: Style.font.caption
-            text: "No backups yet. Back up now makes the first, next to the VM."
+            text: root.freshFace ? "No backups found, beside where the VM was or on your drives."
+              : "No backups yet. Back up now makes the first, next to the VM."
           }
 
           Column {
@@ -2126,6 +2151,13 @@ Panel {
           readonly property bool before: !running && !done && !failed
           readonly property string when: root.restoreEntry
             ? State.whenText(root.restoreEntry.when * 1000, Date.now()) : ""
+          // With no VM (after Remove VM) there is nothing to save first: the
+          // backup goes back where it was made, with ~/.windows linking there
+          // when that was another folder, and the compose is written anew.
+          readonly property bool fresh: restoreFace.running || restoreFace.done || restoreFace.failed
+            ? service.restoreFresh : root.freshFace
+          readonly property string origin: root.restoreEntry ? State.backupOrigin(root.restoreEntry.path) : ""
+          readonly property var shape: State.freshShape(root.restoreEntry)
 
           Text {
             visible: restoreFace.before
@@ -2135,8 +2167,13 @@ Panel {
             color: root.fg
             font.family: root.family
             font.pixelSize: Style.font.caption
-            text: "Windows goes back to how it was on " + restoreFace.when
-              + ": files, apps and settings since then are gone from the VM. Nothing is lost for good, because step 1 keeps today's VM as a backup."
+            text: restoreFace.fresh
+              ? "Windows comes back as it was on " + restoreFace.when + ", in "
+                + State.tildePath(restoreFace.origin, service.home)
+                + (restoreFace.origin !== service.home + "/.windows" ? ", with ~/.windows linking there again as before." : ".")
+                + " The backup stays."
+              : "Windows goes back to how it was on " + restoreFace.when
+                + ": files, apps and settings since then are gone from the VM. Nothing is lost for good, because step 1 keeps today's VM as a backup."
           }
 
           Text {
@@ -2147,15 +2184,22 @@ Panel {
             color: root.dim
             font.family: root.family
             font.pixelSize: Style.font.caption
-            text: "1. Backs up the VM as it is now"
-              + (service.backupPlan ? (service.backupPlan.reflink ? " (instant here)."
-                : " (a full copy, " + State.gbText(service.backupPlan.used) + ").") : ".")
-              + "\n2. Puts this backup's disk and login back."
-              + "\n3. Asks for your password only if the login or the disk size changes."
+            text: restoreFace.fresh
+              ? "1. Copies this backup's disk and login back" + (root.restoreEntry && root.restoreEntry.measured === "btrfs" ? " (instant here)." : ".")
+                + "\n2. Asks for your password once, to set the VM up with " + restoreFace.shape.cores + " cores, "
+                + restoreFace.shape.ram + " of RAM and its " + (restoreFace.shape.disk || "own") + " disk"
+                + (restoreFace.shape.kept ? ", as it had." : " (Install's first offer: Tune changes it after).")
+                + "\n3. Its first Start downloads Omarchy's Windows image again, which Remove deleted."
+              : "1. Backs up the VM as it is now"
+                + (service.backupPlan ? (service.backupPlan.reflink ? " (instant here)."
+                  : " (a full copy, " + State.gbText(service.backupPlan.used) + ").") : ".")
+                + "\n2. Puts this backup's disk and login back."
+                + "\n3. Asks for your password only if the login or the disk size changes."
           }
 
+          // Nothing is replaced with no VM, so nothing to confirm.
           Row {
-            visible: restoreFace.before
+            visible: restoreFace.before && !restoreFace.fresh
             width: parent.width
             spacing: Style.space(12)
 
@@ -2168,7 +2212,7 @@ Panel {
               font.family: root.family
               font.pixelSize: Style.font.caption
               font.bold: true
-              text: "Go back to " + restoreFace.when
+              text: (restoreFace.fresh ? "Bring back " : "Go back to ") + restoreFace.when
 
               MouseArea {
                 anchors.fill: parent
@@ -2201,8 +2245,9 @@ Panel {
               width: restoreRow.cellWidth
               iconText: root.restoreGlyph
               text: "Restore"
-              foreground: root.urgentColor
-              allowed: root.restoreAck && !!root.restoreEntry && root.can("start") && !service.busy
+              foreground: restoreFace.fresh ? root.fg : root.urgentColor
+              primary: restoreFace.fresh
+              allowed: (root.restoreAck || restoreFace.fresh) && !!root.restoreEntry && (root.can("start") || root.can("install")) && !service.busy
               onClicked: service.restoreBackup(root.restorePick)
             }
           }
@@ -2213,7 +2258,7 @@ Panel {
             label: service.restoreStep === "safety" ? "Backing up the VM as it is"
               : service.restoreStep === "copy" ? "Putting the backup back"
               : service.restoreStep === "compose" ? "Waiting for your password"
-              : service.restoreStep === "swap" ? "Swapping the disks"
+              : service.restoreStep === "swap" ? (service.restoreFresh ? "Putting it in place" : "Swapping the disks")
               : "Starting"
             value: service.restoreStep === "safety" || service.restoreStep === "copy"
               ? State.gbText(service.restoreCopied) : ""
@@ -2227,7 +2272,8 @@ Panel {
             color: root.dim
             font.family: root.family
             font.pixelSize: Style.font.caption
-            text: "Start stays off until it ends. Cancel works while it copies, and leaves the VM as it was."
+            text: service.restoreFresh ? "Cancel works while it copies, and leaves things as they were."
+              : "Start stays off until it ends. Cancel works while it copies, and leaves the VM as it was."
           }
 
           ActionRow {
@@ -2253,7 +2299,8 @@ Panel {
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: restoreFace.done
-              ? "Restored. Windows is back to " + restoreFace.when + ". Start it when you're ready."
+              ? "Restored. Windows is back to " + restoreFace.when + ". Start it when you're ready"
+                + (service.restoreFresh ? ": the first Start downloads Omarchy's Windows image again, so it takes a little longer." : ".")
               : "Not restored: " + service.restoreError
                 + (service.restoreSafety !== "" ? " The safety backup it made stays in the list." : "")
           }
@@ -2349,7 +2396,7 @@ Panel {
             }
             InfoPair {
               label: "Omawin"
-              value: "shows Install… again"
+              value: "shows Install… and Restore…"
               dimValue: true
             }
           }
@@ -2606,7 +2653,7 @@ Panel {
         color: root.dim
         font.family: root.family
         font.pixelSize: Style.font.caption
-        text: (backupItem.entry.same ? "VM's drive · " : "other drive · ")
+        text: (root.freshFace ? "" : backupItem.entry.same ? "VM's drive · " : "other drive · ")
           + State.tildePath(backupItem.entry.path, service.home)
           + (backupItem.entry.measured === "btrfs" && backupItem.entry.own === 0 ? " · shares all its blocks"
             : backupItem.entry.measured === "du" ? " · a full copy" : "")
@@ -2622,8 +2669,8 @@ Panel {
           width: backupActions.cellWidth
           iconText: root.restoreGlyph
           text: "Restore…"
-          tooltipText: root.stoppedFace ? "" : "Stop the VM first"
-          allowed: root.stoppedFace && !service.busy
+          tooltipText: root.stoppedFace || root.freshFace ? "" : "Stop the VM first"
+          allowed: (root.stoppedFace || root.freshFace) && !service.busy
           onClicked: { root.restorePick = backupItem.entry.path; root.openFace("restore") }
         }
         ActionButton {

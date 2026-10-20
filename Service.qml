@@ -392,8 +392,16 @@ QtObject {
     // QEMU appearing means a pending shape has just been consumed, so the
     // "Shape saved" banner has said all it had to say.
     if (next.pid && !previous.pid) root.clearNotice()
-    // Nor has anything it said survived the VM being removed or installed.
-    if (next.installed !== previous.installed) root.clearNotice()
+    // Nor has anything it said survived the VM being removed or installed,
+    // unless installing it was a restore's doing: its notice is the news.
+    if (next.installed !== previous.installed && root.restoreDone === "") root.clearNotice()
+    // A sample that still saw no VM can land after the restore's exit and
+    // wipe the cache: the shape it wrote is put back once the VM is seen.
+    if (next.installed && !previous.installed && root.restoreFresh && root.restoreComposed !== "") {
+      var shape = root.restoreComposed.split(" ")
+      root.writePending({ cores: Number(shape[0]), ram: shape[1], disk: shape[2] })
+    }
+    if (!next.installed && previous.installed) root.restoreFresh = false
     if (next.pid) root.checkUnit()
     else root.sessionOpen = false
 
@@ -1237,8 +1245,11 @@ QtObject {
     root.backupCopied = 0
   }
 
+  // The shape goes into the backup when it is known, for a restore after
+  // Remove VM to come back with.
   property Process backupProc: Process {
-    command: ["/usr/bin/bash", root.helpers + "/backup.sh", "run"]
+    command: ["/usr/bin/bash", root.helpers + "/backup.sh", "run"].concat(
+      root.coresText !== "—" && root.ramText !== "—" ? ["--cores", root.coresText, "--ram", root.ramText] : [])
     environment: ({ LC_ALL: "C" })
     stdout: SplitParser {
       onRead: function (data) {
@@ -1331,15 +1342,24 @@ QtObject {
 
   // When the backup being restored was made, for the card's notice.
   property double restoreWhen: 0
+  // A restore with no VM installed (after Remove VM): the helper writes the
+  // compose from scratch, with the shape the backup kept or Install's first
+  // offer (State.freshShape), and there is no VM to save first.
+  property bool restoreFresh: false
+  property var restoreShape: ({ cores: "", ram: "", disk: "" })
 
   function restoreBackup(path) {
-    var known = false
-    for (var i = 0; i < root.backupList.length && !known; i++) {
-      known = root.backupList[i].path === path
-      if (known) root.restoreWhen = root.backupList[i].when
-    }
-    if (!known || root.busy || !root.actions.start) return
+    var entry = null
+    for (var i = 0; i < root.backupList.length && !entry; i++)
+      if (root.backupList[i].path === path) entry = root.backupList[i]
+    if (!entry || root.busy || !(root.actions.start || root.actions.install)) return
     root.clearRestore()
+    root.restoreWhen = entry.when
+    root.restoreFresh = !!root.actions.install
+    var fresh = State.freshShape(entry)
+    root.restoreShape = root.restoreFresh
+      ? { cores: String(fresh.cores), ram: fresh.ram, disk: fresh.disk }
+      : { cores: root.coresText, ram: root.ramText, disk: root.diskText }
     root.restorePath = path
     restoreProc.running = true
   }
@@ -1363,7 +1383,7 @@ QtObject {
 
   property Process restoreProc: Process {
     command: ["/usr/bin/bash", root.helpers + "/backup.sh", "restore", root.restorePath,
-      "--cores", root.coresText, "--ram", root.ramText, "--disk", root.diskText]
+      "--cores", root.restoreShape.cores, "--ram", root.restoreShape.ram, "--disk", root.restoreShape.disk]
     environment: ({ LC_ALL: "C" })
     stdout: SplitParser {
       onRead: function (data) {
@@ -1401,7 +1421,9 @@ QtObject {
       // The outcome also lands on the card, for a card closed meanwhile.
       if (code === 0 && root.restoreDone !== "")
         root.notice("Restored. Windows is back to "
-          + State.whenText(root.restoreWhen * 1000, Date.now()) + "; the VM it replaced is kept as a backup.", true)
+          + State.whenText(root.restoreWhen * 1000, Date.now())
+          + (root.restoreFresh ? ". Its first Start downloads Omarchy's Windows image again, so it takes a little longer."
+            : "; the VM it replaced is kept as a backup."), true)
       else if (code !== 0 && !cancelled && root.restoreError !== "")
         root.notice("Not restored: " + root.restoreError, false)
       root.readBackups()

@@ -151,8 +151,17 @@ puts the backup's disk and login back, instant on btrfs. It asks for your
 password only when the backup's login or disk size differs from the VM's,
 since that rewrites Omarchy's settings for the VM. Then press Start.
 
-**After reinstalling Omarchy**, when there is no VM for the card to restore
-over:
+**After Remove VM**, or after reinstalling Omarchy, the card shows
+**Restore…** beside Install… when it finds a backup: beside where the VM
+was, in your home folder, or at the top of a mounted drive (`/mnt/*`,
+`/media/…`). Restore puts the backup back where it was made, and when that
+was another drive, links `~/.windows` to it again. It asks for your password
+once, to set the VM up with the backup's login and disk and the cores and
+RAM it had (or 2 cores and 4G for a backup older than 0.4.0; Tune changes
+them). The first Start downloads Omarchy's Windows image again, which Remove
+deletes.
+
+**By hand**, for a backup the card doesn't find:
 
 1. Put the backup's `windows` folder back as `~/.windows` (move the current
    one aside first if there is one). Copy it into a fresh folder with
@@ -194,8 +203,11 @@ again. The password is the account's password, not its PIN.
   regenerates the whole file: keys you added to it by hand are dropped.
   Passwords go on stdin, never on a command line.
 - **Writes**: `~/.local/state/omawin/`, the credentials file when you update
-  the password, and the VM's compose through Omarchy's helper. No other
-  configuration is touched.
+  the password, and the VM's compose through Omarchy's helper. The backups
+  you make, and on a restore the VM's folder, the credentials file and, with
+  no VM, the `~/.windows` link, the Shared folder and the launcher's Windows
+  entry, as Omarchy's installer makes them. No other configuration is
+  touched.
 
 The full list, the Pause and Stop details, the tuning table and what the
 polkit rule allows are in [Under the hood](docs/under-the-hood.md). Working on
