@@ -313,6 +313,16 @@ Panel {
   property string backupPick: ""
   // The backup whose Delete… is asking to be confirmed, by path.
   property string backupConfirm: ""
+  // The backup the Restore face would put back, and its switch, off on
+  // every visit as Remove's is.
+  property string restorePick: ""
+  property bool restoreAck: false
+  readonly property var restoreEntry: {
+    var list = service.backupList
+    for (var i = 0; i < list.length; i++)
+      if (list[i].path === root.restorePick) return list[i]
+    return null
+  }
   property string loginFrom: "live"
   property bool removeAck: false
 
@@ -329,6 +339,7 @@ Panel {
     || (root.face === "updatePassword" && service.saveProc.running)
     // A copy in progress is cancelled on purpose, with its own button.
     || (root.face === "backup" && service.backupProc.running)
+    || (root.face === "restore" && service.restoreProc.running)
 
   function goBack() {
     if (root.faceWriting) return
@@ -337,6 +348,7 @@ Panel {
     else if (root.face === "remove") root.openFace(root.removeFrom)
     else if (root.face === "backup") root.openFace(root.backupFrom)
     else if (root.face === "rule" || root.face === "key") root.openFace("settings")
+    else if (root.face === "restore") root.openFace("backup")
     else if (root.face === "tune") root.openFace(root.tuneFrom)
     else if (root.face === "login") root.openFace(root.loginFrom)
     else root.openFace("live")
@@ -360,7 +372,7 @@ Panel {
     // that is off. Their buttons can only reach them then, but the IPC `face`
     // can be asked for one at any time: it gets the card instead.
     if (!root.stoppedFace
-      && (name === "tune" || name === "updatePassword" || name === "remove"))
+      && (name === "tune" || name === "updatePassword" || name === "remove" || name === "restore"))
       name = "live"
     if (name === "tune") {
       if (root.face !== "tune") root.tuneFrom = root.face === "settings" ? "settings" : "live"
@@ -398,6 +410,11 @@ Panel {
       root.backupConfirm = ""
       service.backupDeleteError = ""
     }
+    if (name === "restore") {
+      if (!service.restoreProc.running) service.clearRestore()
+      root.restoreAck = false
+      service.readBackupPlan()
+    }
     if (name === "updatePassword") {
       service.clearNotice()
       newPassword.text = ""
@@ -422,7 +439,8 @@ Panel {
   // read and pruned while Windows runs, only Back up and Restore wait.
   onVmStateChanged: {
     if (!root.stoppedFace
-      && (root.face === "tune" || root.face === "updatePassword" || root.face === "remove")) {
+      && (root.face === "tune" || root.face === "updatePassword" || root.face === "remove"
+        || (root.face === "restore" && !service.restoreProc.running))) {
       root.dropPasswordField()
       root.face = "live"
     }
@@ -510,7 +528,7 @@ Panel {
     // faces that only exist for a stopped VM open only on one, and nothing
     // runs. Anything else means "live".
     function face(name: string): string {
-      var faces = ["live", "tune", "login", "updatePassword", "settings", "rule", "key", "remove", "backup"]
+      var faces = ["live", "tune", "login", "updatePassword", "settings", "rule", "key", "remove", "backup", "restore"]
       root.openFace(faces.indexOf(String(name)) >= 0 ? String(name) : "live")
       return root.face
     }
@@ -620,12 +638,15 @@ Panel {
             : root.face === "updatePassword" ? "Login"
             : root.face === "remove" ? "Remove VM"
             : root.face === "backup" ? "Backups"
+            : root.face === "restore" ? "Restore"
             : root.face === "rule" ? "Passwordless actions"
             : root.face === "key" ? "Key binding"
             : "Settings"
           meta: root.live ? service.label
             : root.face === "login" ? "Windows VM · RDP and web viewer"
             : root.face === "updatePassword" ? "Windows VM · change the login"
+            : root.face === "restore" ? "Windows VM · " + (root.restoreEntry
+              ? "back to " + State.whenText(root.restoreEntry.when * 1000, Date.now()) : "stopped")
             : root.face === "settings" ? "Windows VM · Omawin " + root.pluginVersion
             : root.face === "rule" || root.face === "key" ? "Windows VM · this desktop"
             : "Windows VM · " + service.label.toLowerCase()
@@ -2082,6 +2103,176 @@ Panel {
           }
         }
 
+        // ============================= Restore =============================
+        // helpers/backup.sh restore: a safety backup of the VM as it is, the
+        // chosen backup staged beside it, the compose rewritten only if the
+        // login or the disk differs (the one dialog), then the swap. Before:
+        // what happens and a switch, as Remove asks. During: the step and
+        // Cancel while it copies. After: where the VM it replaced went.
+        Column {
+          id: restoreFace
+          visible: root.face === "restore"
+          width: parent.width
+          spacing: Style.space(14)
+
+          readonly property bool running: service.restoreProc.running
+          readonly property bool done: service.restoreDone !== ""
+          readonly property bool failed: !running && service.restoreError !== ""
+          readonly property bool before: !running && !done && !failed
+          readonly property string when: root.restoreEntry
+            ? State.whenText(root.restoreEntry.when * 1000, Date.now()) : ""
+
+          Text {
+            visible: restoreFace.before
+            width: parent.width
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.fg
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            text: "Windows goes back to how it was on " + restoreFace.when
+              + ": files, apps and settings since then are gone from the VM. Nothing is lost for good, because step 1 keeps today's VM as a backup."
+          }
+
+          Text {
+            visible: restoreFace.before
+            width: parent.width
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.dim
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            text: "1. Backs up the VM as it is now"
+              + (service.backupPlan ? (service.backupPlan.reflink ? " (instant here)."
+                : " (a full copy, " + State.gbText(service.backupPlan.used) + ").") : ".")
+              + "\n2. Puts this backup's disk and login back."
+              + "\n3. Asks for your password only if the login or the disk size changes."
+          }
+
+          Row {
+            visible: restoreFace.before
+            width: parent.width
+            spacing: Style.space(12)
+
+            Text {
+              width: parent.width - restoreSwitch.implicitWidth - parent.spacing
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              wrapMode: Text.WordWrap
+              color: root.fg
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              text: "Go back to " + restoreFace.when
+
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.restoreAck = !root.restoreAck
+              }
+            }
+
+            ToggleSwitch {
+              id: restoreSwitch
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.restoreAck
+              foreground: root.fg
+              onToggled: root.restoreAck = !root.restoreAck
+            }
+          }
+
+          ActionRow {
+            id: restoreRow
+            visible: restoreFace.before
+            cells: 2
+            ActionButton {
+              width: restoreRow.cellWidth
+              iconText: root.closeGlyph
+              text: "Cancel"
+              allowed: true
+              onClicked: root.goBack()
+            }
+            ActionButton {
+              width: restoreRow.cellWidth
+              iconText: root.backGlyph
+              text: "Restore"
+              foreground: root.urgentColor
+              allowed: root.restoreAck && !!root.restoreEntry && root.can("start") && !service.busy
+              onClicked: service.restoreBackup(root.restorePick)
+            }
+          }
+
+          // ---- restoring
+          InfoPair {
+            visible: restoreFace.running
+            label: service.restoreStep === "safety" ? "Backing up the VM as it is"
+              : service.restoreStep === "copy" ? "Putting the backup back"
+              : service.restoreStep === "compose" ? "Waiting for your password"
+              : service.restoreStep === "swap" ? "Swapping the disks"
+              : "Starting"
+            value: service.restoreStep === "safety" || service.restoreStep === "copy"
+              ? State.gbText(service.restoreCopied) : ""
+          }
+
+          Text {
+            visible: restoreFace.running
+            width: parent.width
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.dim
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            text: "Start stays off until it ends. Cancel works while it copies, and leaves the VM as it was."
+          }
+
+          ActionRow {
+            id: restoreCancelRow
+            visible: restoreFace.running
+            cells: 1
+            ActionButton {
+              width: restoreCancelRow.cellWidth
+              iconText: root.closeGlyph
+              text: "Cancel"
+              allowed: service.restoreStep === "safety" || service.restoreStep === "copy"
+              onClicked: service.cancelRestore()
+            }
+          }
+
+          // ---- restored, or not
+          Text {
+            visible: restoreFace.done || restoreFace.failed
+            width: parent.width
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: restoreFace.failed ? root.urgentColor : root.fg
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            text: restoreFace.done
+              ? "Restored. Windows is back to " + restoreFace.when + ". Start it when you're ready."
+              : "Not restored: " + service.restoreError
+                + (service.restoreSafety !== "" ? " The safety backup it made stays in the list." : "")
+          }
+
+          InfoPair {
+            visible: restoreFace.done && service.restoreSafety !== ""
+            label: "The VM it replaced"
+            value: State.tildePath(service.restoreSafety, service.home)
+          }
+
+          ActionRow {
+            id: restoreDoneRow
+            visible: restoreFace.done || restoreFace.failed
+            cells: 1
+            ActionButton {
+              width: restoreDoneRow.cellWidth
+              iconText: root.checkGlyph
+              text: "Done"
+              allowed: true
+              onClicked: { service.clearRestore(); root.openFace("backup") }
+            }
+          }
+        }
+
         // ============================ Remove ===============================
         // The last thing read before Omarchy's terminal, whose own prompt only
         // asks "Remove Windows VM and delete all associated data?": so the
@@ -2421,7 +2612,15 @@ Panel {
       ActionRow {
         id: backupActions
         visible: backupItem.open && !backupItem.confirming
-        cells: 2
+        cells: 3
+        ActionButton {
+          width: backupActions.cellWidth
+          iconText: root.backGlyph
+          text: "Restore…"
+          tooltipText: root.stoppedFace ? "" : "Stop the VM first"
+          allowed: root.stoppedFace && !service.busy
+          onClicked: { root.restorePick = backupItem.entry.path; root.openFace("restore") }
+        }
         ActionButton {
           width: backupActions.cellWidth
           iconText: root.trashGlyph

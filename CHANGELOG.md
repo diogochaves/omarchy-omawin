@@ -41,6 +41,12 @@ chaves.omawin` brings you the latest.
   saying how much it frees, and deletes only a backup folder the list shows,
   never the VM itself.
 
+- **Restore a backup from the card.** Restore… on a backup, with the VM
+  off, first backs up the VM as it is (so the restore can be undone from the
+  same list), then puts the backup's disk and login back: instant on btrfs.
+  It asks for your password only when the backup's login or disk size
+  differs, and cancelling that dialog changes nothing.
+
 ## 0.3.3 — 2026-10-20
 
 ### Changed

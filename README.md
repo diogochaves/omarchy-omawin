@@ -135,13 +135,24 @@ and `consoleState` properties.
 ## Restoring a backed-up VM
 
 A backup is two things: the `~/.windows` folder (the disk) and
-`~/.config/windows/credentials` (the login Connect uses). **Settings › Back
-up VM…** copies both, with the VM off, into `~/.windows.bak-<date>`, or,
-when `~/.windows` is a link to a folder on another drive, next to that folder
-(`/mnt/data/windows` → `/mnt/data/windows.bak-<date>`); the face shows where.
-Its `windows` folder is the disk, its `credentials` file the login. It is on
-the same drive as the VM, so copy that folder somewhere else to survive a
-reinstall or a dead drive. To restore, with the VM off (or after reinstalling Omarchy):
+`~/.config/windows/credentials` (the login Connect uses). **Settings ›
+Backups › Back up now** copies both, with the VM off, into
+`~/.windows.bak-<date>`, or, when `~/.windows` is a link to a folder on
+another drive, next to that folder (`/mnt/data/windows` →
+`/mnt/data/windows.bak-<date>`); the face shows where. Its `windows` folder
+is the disk, its `credentials` file the login. It is on the same drive as the
+VM, so copy that folder somewhere else to survive a reinstall or a dead
+drive.
+
+**From the card**, with the VM off: Settings › Backups, open a backup,
+**Restore…**, turn on "Go back to …" and press **Restore**. It first backs up
+the VM as it is, so the restore can be undone from the same list; then it
+puts the backup's disk and login back, instant on btrfs. It asks for your
+password only when the backup's login or disk size differs from the VM's,
+since that rewrites Omarchy's settings for the VM. Then press Start.
+
+**After reinstalling Omarchy**, when there is no VM for the card to restore
+over:
 
 1. Put the backup's `windows` folder back as `~/.windows` (move the current
    one aside first if there is one). Copy it into a fresh folder with

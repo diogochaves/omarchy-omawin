@@ -159,8 +159,9 @@ QtObject {
     // that installs the polkit rule all grey every button out while they run,
     // so a start cannot be stacked on top of a compose rewrite.
     || tuneProc.running || saveProc.running || polkitProc.running
-    // A backup reads data.img for minutes: Start must wait for it.
-    || backupProc.running
+    // A backup reads data.img for minutes: Start must wait for it. So must
+    // a restore, which swaps the disk Start would boot.
+    || backupProc.running || restoreProc.running
 
   // When the current episode began: the moment Start/Stop was pressed while a
   // transient is pending, otherwise the moment this QEMU process first showed
@@ -1310,6 +1311,76 @@ QtObject {
       root.backupDeleting = ""
       root.readBackups()
       root.readBackupPlan()
+    }
+  }
+
+  // Restore one backup, VM off (helpers/backup.sh restore): a safety backup
+  // of the VM as it is, the backup staged beside it, the compose rewritten
+  // only if the login or disk differs (the one dialog), then the swap.
+  // `step` is where it is; Cancel holds while it copies, and the helper
+  // cleans up after it.
+  property string restorePath: ""
+  property string restoreStep: ""
+  property double restoreCopied: 0
+  property string restoreSafety: ""
+  property string restoreDone: ""
+  property string restoreError: ""
+  property bool restoreCancelled: false
+
+  function restoreBackup(path) {
+    var known = false
+    for (var i = 0; i < root.backupList.length && !known; i++)
+      known = root.backupList[i].path === path
+    if (!known || root.busy || !root.actions.start) return
+    root.clearRestore()
+    root.restorePath = path
+    restoreProc.running = true
+  }
+
+  function cancelRestore() {
+    if (!restoreProc.running || (root.restoreStep !== "safety" && root.restoreStep !== "copy")) return
+    root.restoreCancelled = true
+    restoreProc.running = false
+  }
+
+  function clearRestore() {
+    if (restoreProc.running) return
+    root.restoreStep = ""
+    root.restoreCopied = 0
+    root.restoreSafety = ""
+    root.restoreDone = ""
+    root.restoreError = ""
+    root.restoreCancelled = false
+  }
+
+  property Process restoreProc: Process {
+    command: ["/usr/bin/bash", root.helpers + "/backup.sh", "restore", root.restorePath,
+      "--cores", root.coresText, "--ram", root.ramText, "--disk", root.diskText]
+    environment: ({ LC_ALL: "C" })
+    stdout: SplitParser {
+      onRead: function (data) {
+        var line = root.plain(String(data), 4096)
+        var step = /^step=(safety|copy|compose|swap)$/.exec(line)
+        if (step) { root.restoreStep = step[1]; root.restoreCopied = 0 }
+        var copied = /^copied=([0-9]{1,19})$/.exec(line)
+        if (copied) root.restoreCopied = Number(copied[1])
+        var safety = State.parseBackupDone(line)
+        if (safety !== "") root.restoreSafety = safety
+        if (line === "restored=" + root.restorePath) root.restoreDone = root.restorePath
+      }
+    }
+    stderr: StdioCollector { id: restoreErr; waitForEnd: true }
+    onExited: function (code) {
+      var message = root.lastLine(restoreErr.text)
+      if (code !== 0 && !root.restoreCancelled)
+        root.restoreError = root.dismissed(message)
+          ? "you closed the password dialog, so nothing changed."
+          : message || "the restore failed"
+      if (code !== 0) root.restoreDone = ""
+      root.restoreStep = ""
+      root.readBackups()
+      root.readBackupPlan()
+      root.refresh()
     }
   }
 

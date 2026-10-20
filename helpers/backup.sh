@@ -14,6 +14,12 @@
 #   helpers/backup.sh delete PATH
 #                            deletes that backup, and only a folder `list`
 #                            shows: `deleted=<path>`
+#   helpers/backup.sh restore PATH --cores N --ram NG --disk NG
+#                            puts that backup back as the VM (see "Restore"
+#                            below): `step=` and `copied=` lines while it
+#                            works, `done=<safety backup>` once that is made,
+#                            then `restored=<path>`; SIGTERM cancels it while
+#                            it copies
 #
 #   ok       there is room for the copy (1/0)
 #   reflink  the VM's folder and `where` are on one btrfs or XFS filesystem,
@@ -81,12 +87,38 @@
 # metadata. It is the same drive as the original, which the card says: this
 # guards against a bad Tune, update or Remove, not a failed disk.
 #
+# Restore, VM off, in an order where stopping half-way never leaves a VM that
+# is neither the old one nor the backup:
+#
+#   1. a safety backup of the VM as it is, exactly as `run` makes one, so a
+#      restore can itself be undone (instant where `run` is)
+#   2. the backup's windows/ copied into a hidden folder beside the VM's real
+#      folder, +C when its data.img is, so on btrfs it shares the backup's
+#      blocks. The VM is untouched so far, and Cancel removes this copy
+#   3. only when the backup's login or disk size differs from the VM's, the
+#      compose rewritten through `pkexec omarchy-windows-vm __priv
+#      write_compose`, the one dialog Tune and Login's Save ask, with the
+#      backup's login and disk: a dismissed dialog removes the copy and
+#      changes nothing (the safety backup stays, in the list)
+#   4. two renames on that one filesystem: the VM's folder aside, the copy in
+#      its place (~/.windows, a symlink or not, keeps pointing at it), and
+#      the old folder deleted, since step 1 holds it
+#   5. the backup's credentials file back as ~/.config/windows/credentials,
+#      0600, atomically, when it has one
+#
+# The password is read from the backup's file and piped to pkexec, never an
+# argument. The card passes the cores, RAM and disk the next start would use,
+# as Login's Save does: write_compose takes all six fields.
+#
 # Environment (all optional, the defaults are the real system):
 #   WINDOWS_DIR       the VM's storage      (default ~/.windows)
 #   CREDENTIALS_FILE  the login             (default ~/.config/windows/credentials)
 #   BACKUP_ROOT       where backups go      (default: see "Where" above)
 #   TODAY             the date in the name  (default today, YYYY-MM-DD)
 #   FREE_BYTES, REFLINK  override the two readings, for the tests
+#   VM_RUNNING        =1/0 instead of asking vm-state.sh, for the tests
+#   TZ_NAME           skip timedatectl, use this value
+#   RESTORE_DRY_RUN   =1 skips the pkexec step and says what it would write
 #   NOCOW, NOCOW_SET     override whether data.img is +C and whether the
 #                        partial folder takes +C (1/0), for the tests
 
@@ -268,6 +300,231 @@ delete_backup() {
   printf 'deleted=%s\n' "$target"
 }
 
+# Whether Windows runs: vm-state.sh's pid, which it reads from /proc as the
+# user. Unknown counts as running: restore refuses rather than guess.
+vm_running() {
+  if [[ -n ${VM_RUNNING-} ]]; then
+    [[ $VM_RUNNING == 1 ]]
+    return
+  fi
+  local line
+  line=$(/usr/bin/bash "${BASH_SOURCE[0]%/*}/vm-state.sh" 2>/dev/null) || return 0
+  [[ $line == *" pid= "* ]] && return 1
+  return 0
+}
+
+# One field of a credentials file, split on the first = (as credentials.sh).
+credential_of() {
+  local file=$1 want=$2 key value
+  [[ -f $file ]] || return 1
+  while IFS='=' read -r key value; do
+    if [[ $key == "$want" ]]; then
+      printf '%s' "$value"
+      return 0
+    fi
+  done <"$file"
+  return 1
+}
+
+# The rules credentials.sh and Omarchy's helper hold a login to.
+login_ok() {
+  local username=$1 password=$2 back
+  [[ $username =~ ^[A-Za-z0-9_-]{1,20}$ ]] || return 1
+  local LC_ALL=C.UTF-8
+  [[ $password =~ ^[[:print:]]{1,64}$ ]] || return 1
+  IFS='=' read -r _ back <<<"PASSWORD=$password"
+  [[ $back == "$password" ]]
+}
+
+# A whole number of GiB, the image's apparent size: what DISK_SIZE says.
+image_disk() {
+  local bytes
+  bytes=$(/usr/bin/stat -Lc '%s' -- "$1" 2>/dev/null) || return 1
+  [[ $bytes =~ ^[0-9]{1,19}$ ]] && ((10#$bytes >= 1073741824 && 10#$bytes % 1073741824 == 0)) || return 1
+  printf '%sG' "$((10#$bytes / 1073741824))"
+}
+
+timezone() {
+  local value=${TZ_NAME-$(/usr/bin/timedatectl show -p Timezone --value 2>/dev/null)}
+  [[ $value =~ ^[A-Za-z0-9_/.+-]{1,64}$ ]] || value=UTC
+  printf '%s' "$value"
+}
+
+# As credentials.sh writes it: mktemp beside it under umask 077, 0600, mv.
+save_login() {
+  local username=$1 password=$2 dir tmp old_umask
+  dir=${credentials%/*}
+  /usr/bin/mkdir -p -- "$dir" && /usr/bin/chmod 0700 -- "$dir" || return 1
+  old_umask=$(umask)
+  umask 077
+  tmp=$(/usr/bin/mktemp "$dir/.credentials.XXXXXX") || { umask "$old_umask"; return 1; }
+  if ! printf 'USERNAME=%s\nPASSWORD=%s\n' "$username" "$password" >"$tmp" ||
+    ! /usr/bin/chmod 0600 -- "$tmp" || ! /usr/bin/mv -fT -- "$tmp" "$credentials"; then
+    /usr/bin/rm -f -- "$tmp"
+    umask "$old_umask"
+    return 1
+  fi
+  umask "$old_umask"
+}
+
+staging=
+
+# Cancel, or a failure before the swap: the hidden copy goes, the VM stays.
+abandon_restore() {
+  [[ -n $copy_pid ]] && kill "$copy_pid" 2>/dev/null && wait "$copy_pid" 2>/dev/null
+  [[ -n $staging && -d $staging ]] && /usr/bin/rm -rf -- "$staging"
+  return 0
+}
+
+restore_backup() {
+  local chosen= cores= ram= disk=
+  chosen=${1-}
+  shift || true
+  while (($#)); do
+    case $1 in
+      --cores | --ram | --disk)
+        (($# >= 2)) || die "$1 needs a value"
+        case $1 in
+          --cores) cores=$2 ;;
+          --ram) ram=$2 ;;
+          --disk) disk=$2 ;;
+        esac
+        shift
+        ;;
+      *) die "unknown option: $1" ;;
+    esac
+    shift
+  done
+  [[ -n $chosen ]] || die "usage: backup.sh restore PATH --cores N --ram NG --disk NG"
+  [[ -d $windows && -f $windows/data.img ]] || nothing_yet "nothing to restore over: $windows has no data.img"
+  choose_root
+  local dir found=
+  while IFS=$'\t' read -r _ dir; do
+    [[ $dir == "$chosen" ]] && found=1
+  done < <(backups)
+  [[ -n $found ]] || die "not a backup: $chosen"
+  vm_running && die "stop the VM first: a disk Windows is using can't be swapped"
+
+  local src=$chosen/windows real parent name
+  real=$(/usr/bin/realpath -e -- "$windows") || die "cannot read $windows"
+  parent=${real%/*}
+  name=${real##*/}
+  [[ -w $parent ]] || die "cannot write beside $real"
+
+  # The login and disk the restored VM will have, and whether the compose
+  # has to say so.
+  local bu bp cu cp bdisk compose=0
+  bdisk=$(image_disk "$src/data.img") || die "the backup's disk is not a whole number of GB"
+  cu=$(credential_of "$credentials" USERNAME) || cu=
+  cp=$(credential_of "$credentials" PASSWORD) || cp=
+  if [[ -f $chosen/credentials ]]; then
+    bu=$(credential_of "$chosen/credentials" USERNAME) || die "the backup's credentials have no USERNAME"
+    bp=$(credential_of "$chosen/credentials" PASSWORD) || die "the backup's credentials have no PASSWORD"
+  else
+    bu=$cu
+    bp=$cp
+  fi
+  login_ok "$bu" "$bp" || die "the backup's login is not one Omarchy can use"
+  [[ $bu == "$cu" && $bp == "$cp" && $bdisk == "$disk" ]] || compose=1
+  if ((compose)); then
+    # shellcheck disable=SC2015 # both halves are tests; die exits
+    [[ $cores =~ ^[0-9]{1,2}$ ]] && ((10#$cores >= 1)) || die "the VM's core count is not known yet: start it once first"
+    [[ $ram =~ ^[0-9]{1,3}G$ ]] || die "the VM's RAM size is not known yet: start it once first"
+  fi
+
+  # Room for both copies, before anything is made: the safety backup as
+  # `plan` reckons it, then the staged copy, free when it can share the
+  # backup's blocks, its whole written size when it can't.
+  plan
+  ((ok)) || die "not enough room for the safety backup: it needs $(((reflink ? spare : used + spare) / spare)) GB free, $root has $((free / spare)) GB"
+  local staged need left
+  staged=$(occupied "$src/.") || die "cannot read the size of $src"
+  need=$((staged + spare))
+  [[ $(/usr/bin/stat -c %d -- "$src/." 2>/dev/null) == $(/usr/bin/stat -c %d -- "$parent/." 2>/dev/null) ]] &&
+    [[ $(/usr/bin/stat -f -c %T -- "$parent/." 2>/dev/null) == btrfs || $(/usr/bin/stat -f -c %T -- "$parent/." 2>/dev/null) == xfs ]] &&
+    need=$spare
+  left=$free
+  ((reflink)) || left=$((free - used))
+  ((left >= need)) || die "not enough room: putting the backup back needs $((need / spare)) GB free beside $real after the safety backup"
+
+  # 1. the safety backup, exactly as `run` makes one
+  echo "step=safety"
+  run
+  trap 'abandon_restore; exit 130' TERM INT HUP
+
+  # 2. the backup, staged beside the VM
+  echo "step=copy"
+  local old_umask errors status=0
+  staging=$parent/.$name.restoring
+  [[ ! -e $staging ]] || /usr/bin/rm -rf -- "$staging"
+  old_umask=$(umask)
+  umask 077
+  /usr/bin/mkdir -- "$staging" || die "cannot make $staging"
+  umask "$old_umask"
+  local flags
+  flags=$(/usr/bin/lsattr -d -- "$src/data.img" 2>/dev/null) && [[ ${flags%% *} == *C* ]] && set_nocow "$staging"
+  errors=$staging.errors
+  /usr/bin/cp -a --reflink=auto --sparse=always -- "$src/." "$staging/" 2>"$errors" &
+  copy_pid=$!
+  while kill -0 "$copy_pid" 2>/dev/null; do
+    printf 'copied=%s\n' "$(occupied "$staging" || echo 0)"
+    /usr/bin/sleep 1 &
+    wait $! 2>/dev/null
+  done
+  wait "$copy_pid" || status=$?
+  copy_pid=
+  if ((status != 0)); then
+    local why
+    why=$(/usr/bin/tail -n 1 -- "$errors" 2>/dev/null)
+    /usr/bin/rm -f -- "$errors"
+    abandon_restore
+    die "copying the backup failed: ${why:-cp exited with status $status}"
+  fi
+  /usr/bin/rm -f -- "$errors"
+  # From here nothing is half-done for long: no cancel.
+  trap '' TERM INT HUP
+
+  # 3. the compose, when the login or the disk differs
+  if ((compose)); then
+    echo "step=compose"
+    if [[ ${RESTORE_DRY_RUN-} == 1 ]]; then
+      echo "dry run: compose not rewritten (RAM=$ram CORES=$cores DISK=$bdisk USERNAME=$bu)"
+    else
+      local message
+      status=0
+      message=$(printf 'RAM=%s\nCORES=%s\nDISK=%s\nUSERNAME=%s\nPASSWORD=%s\nTZ=%s\n' \
+        "$ram" "$cores" "$bdisk" "$bu" "$bp" "$(timezone)" |
+        /usr/bin/pkexec /usr/bin/omarchy-windows-vm __priv write_compose 2>&1 >/dev/null) ||
+        status=$?
+      if ((status != 0)); then
+        abandon_restore
+        printf '%s\n' "${message:-write_compose exited with status $status}" | /usr/bin/head -c 2048 >&2
+        exit 1
+      fi
+    fi
+  fi
+
+  # 4. the swap: two renames on one filesystem
+  echo "step=swap"
+  local aside=$parent/.$name.replaced
+  [[ ! -e $aside ]] || /usr/bin/rm -rf -- "$aside"
+  /usr/bin/mv -T -- "$real" "$aside" || { abandon_restore; die "could not move $real aside; the VM is as it was"; }
+  if ! /usr/bin/mv -T -- "$staging" "$real"; then
+    /usr/bin/mv -T -- "$aside" "$real"
+    abandon_restore
+    die "could not put the backup in place; the VM is as it was"
+  fi
+  staging=
+  /usr/bin/rm -rf -- "$aside"
+
+  # 5. the login
+  if [[ $bu != "$cu" || $bp != "$cp" ]]; then
+    save_login "$bu" "$bp" || die "the disk is restored but $credentials could not be rewritten: copy the backup's credentials file over it"
+  fi
+  trap - TERM INT HUP
+  printf 'restored=%s\n' "$chosen"
+}
+
 # The copy and the VM's folder on one filesystem.
 same_drive() {
   local src dst
@@ -380,5 +637,9 @@ case ${1-} in
   run) run ;;
   list) print_list ;;
   delete) delete_backup "${2-}" ;;
-  *) die "usage: backup.sh plan | run | list | delete PATH" ;;
+  restore)
+    shift
+    restore_backup "$@"
+    ;;
+  *) die "usage: backup.sh plan | run | list | delete PATH | restore PATH ..." ;;
 esac

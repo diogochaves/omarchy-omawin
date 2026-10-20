@@ -352,3 +352,109 @@ test('delete removes a listed backup and refuses anything else', t => {
   assert.ok(fs.existsSync(path.join(home, '.windows.bak-2026-10-05.partial')))
   assert.ok(fs.existsSync(path.join(env.WINDOWS_DIR, 'data.img')))
 })
+
+// Restore (#23): a safety backup first, the backup's disk and login back,
+// and the compose rewritten only when the login or the disk differs. The
+// pkexec step is the dry run here.
+function restoreBox(t) {
+  const made = box(t, { written: 2 })
+  const env = { ...made.env, VM_RUNNING: '0', RESTORE_DRY_RUN: '1', TZ_NAME: 'UTC' }
+  assert.equal(helper('backup.sh', ['run'], env).status, 0)
+  const backup = path.join(made.home, '.windows.bak-2026-10-04')
+  // Windows moves on after the backup: other bytes, another login.
+  const image = path.join(env.WINDOWS_DIR, 'data.img')
+  const fd = fs.openSync(image, 'r+')
+  fs.writeSync(fd, Buffer.alloc(MIB, 9), 0, MIB, 0)
+  fs.closeSync(fd)
+  fs.writeFileSync(env.CREDENTIALS_FILE, 'USERNAME=other\nPASSWORD=changed\n', { mode: 0o600 })
+  return { env, home: made.home, backup, image }
+}
+
+const firstByte = file => {
+  const fd = fs.openSync(file, 'r')
+  const b = Buffer.alloc(1)
+  fs.readSync(fd, b, 0, 1, 0)
+  fs.closeSync(fd)
+  return b[0]
+}
+
+test('restore puts the backup back and keeps the VM it replaced', t => {
+  const { env, home, backup, image } = restoreBox(t)
+  const args = ['restore', backup, '--cores', '3', '--ram', '4G', '--disk', '64G']
+  const result = helper('backup.sh', args, env)
+  assert.equal(result.status, 0, result.err)
+  const steps = result.out.split('\n').filter(l => l.startsWith('step=')).map(l => l.slice(5))
+  assert.deepEqual(steps, ['safety', 'copy', 'compose', 'swap'])
+  assert.match(result.out, /dry run: compose not rewritten \(RAM=4G CORES=3 DISK=64G USERNAME=chaves\)/)
+  assert.match(result.out, new RegExp(`\\nrestored=${backup}$`))
+  // The backup's bytes are the VM's again, and its login.
+  assert.equal(firstByte(image), 7)
+  assert.equal(fs.statSync(image).size, 64 * 1024 ** 3)
+  assert.equal(fs.readFileSync(env.CREDENTIALS_FILE, 'utf8'), 'USERNAME=chaves\nPASSWORD=secret\n')
+  assert.equal(fs.statSync(env.CREDENTIALS_FILE).mode & 0o777, 0o600)
+  // The VM it replaced is a backup now, with its own login.
+  const safety = path.join(home, '.windows.bak-2026-10-04-2')
+  assert.match(result.out, new RegExp(`\\ndone=${safety}\\n`))
+  assert.equal(firstByte(path.join(safety, 'windows/data.img')), 9)
+  assert.equal(fs.readFileSync(path.join(safety, 'credentials'), 'utf8'), 'USERNAME=other\nPASSWORD=changed\n')
+  // The backup itself stays, and nothing half-made is left.
+  assert.equal(firstByte(path.join(backup, 'windows/data.img')), 7)
+  assert.deepEqual(fs.readdirSync(home).filter(n => /restoring|replaced|partial|errors/.test(n)), [])
+})
+
+test('restore of an identical login and disk does not touch the compose', t => {
+  const { env, backup } = restoreBox(t)
+  fs.writeFileSync(env.CREDENTIALS_FILE, 'USERNAME=chaves\nPASSWORD=secret\n', { mode: 0o600 })
+  const result = helper('backup.sh', ['restore', backup, '--disk', '64G'], env)
+  assert.equal(result.status, 0, result.err)
+  assert.doesNotMatch(result.out, /step=compose|dry run/)
+})
+
+test('restore refuses a running VM, a path that is not a backup, and an unknown shape', t => {
+  const { env, home, backup, image } = restoreBox(t)
+  const args = ['restore', backup, '--cores', '3', '--ram', '4G', '--disk', '64G']
+  const running = helper('backup.sh', args, { ...env, VM_RUNNING: '1' })
+  assert.equal(running.status, 2)
+  assert.match(running.err, /stop the VM first/)
+  const stranger = helper('backup.sh', ['restore', env.WINDOWS_DIR, '--disk', '64G'], env)
+  assert.equal(stranger.status, 2)
+  assert.match(stranger.err, /not a backup/)
+  const shapeless = helper('backup.sh', ['restore', backup, '--disk', '64G'], env)
+  assert.equal(shapeless.status, 2)
+  assert.match(shapeless.err, /core count is not known/)
+  // None of them changed the VM or made a safety backup.
+  assert.equal(firstByte(image), 9)
+  assert.equal(fs.readFileSync(env.CREDENTIALS_FILE, 'utf8'), 'USERNAME=other\nPASSWORD=changed\n')
+  assert.deepEqual(fs.readdirSync(home).filter(n => n.startsWith('.windows.bak')), ['.windows.bak-2026-10-04'])
+})
+
+test('restore without room for the safety backup changes nothing', t => {
+  const { env, home, backup, image } = restoreBox(t)
+  const tight = { ...env, FREE_BYTES: String(1024 ** 3) }
+  const result = helper('backup.sh', ['restore', backup, '--cores', '3', '--ram', '4G', '--disk', '64G'], tight)
+  assert.equal(result.status, 2)
+  assert.match(result.err, /not enough room for the safety backup/)
+  assert.equal(firstByte(image), 9)
+  assert.deepEqual(fs.readdirSync(home).filter(n => n.startsWith('.windows.bak')), ['.windows.bak-2026-10-04'])
+})
+
+test('on btrfs, a restored +C disk shares its blocks with the backup', t => {
+  const under = btrfsDir()
+  if (!under) return t.skip('no btrfs folder (set OMAWIN_TEST_BTRFS)')
+  const lsattr = file => spawnSync('/usr/bin/lsattr', ['-d', file], { encoding: 'utf8' }).stdout.split(' ')[0]
+  const { env, home } = box(t, { written: 0, under })
+  const image = path.join(env.WINDOWS_DIR, 'data.img')
+  fs.rmSync(image)
+  assert.equal(spawnSync('/usr/bin/chattr', ['+C', env.WINDOWS_DIR]).status, 0)
+  fs.writeFileSync(image, Buffer.alloc(4 * MIB, 7))
+  fs.truncateSync(image, 64 * 1024 ** 3)
+  const real = { ...env, VM_RUNNING: '0', RESTORE_DRY_RUN: '1', TZ_NAME: 'UTC' }
+  delete real.REFLINK
+  assert.equal(helper('backup.sh', ['run'], real).status, 0)
+  const backup = path.join(home, '.windows.bak-2026-10-04')
+  const result = helper('backup.sh', ['restore', backup, '--disk', '64G'], real)
+  assert.equal(result.status, 0, result.err)
+  assert.match(lsattr(path.join(env.WINDOWS_DIR, 'data.img')), /C/)
+  const extents = spawnSync('/usr/bin/filefrag', ['-v', path.join(env.WINDOWS_DIR, 'data.img')], { encoding: 'utf8' }).stdout
+  assert.match(extents, /shared/, 'the restored disk shares the backup\'s blocks')
+})
