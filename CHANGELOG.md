@@ -5,6 +5,8 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+## 0.3.2 — 2026-10-20
+
 ### Fixed
 
 - **Back up VM… no longer waits forever on a VM that never started.** Windows
