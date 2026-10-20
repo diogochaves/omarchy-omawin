@@ -1,4 +1,4 @@
-<p align="center"><img src="preview.png" alt="Omawin: Windows, from the bar. Omarchy's own Windows 11 VM: the ready card open under its glyph in the stock Omarchy bar, with Connect, Pause, Stop, Web viewer, Shared folder and Login" width="800"></p>
+<p align="center"><img src="preview.png" alt="Omawin: Windows, from the bar, for Omarchy's Windows 11 VM. The stopped card open under its glyph in the stock Omarchy bar: 4 cores, 8G of RAM, a 64G disk, the key SUPER ALT W and the login, with Start, Shared folder and Tune" width="800"></p>
 
 # Omawin
 

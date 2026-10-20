@@ -94,3 +94,12 @@ a program to run: the unit name and every command line are constants.
 - `polkit/49-omawin.rules.in`, `polkit/49-omawin-probe.rules.in` and `setup`
   — the rule that makes the cycle passwordless, its probe, and the script that
   shows and installs them.
+
+## The cover and the social preview
+
+`preview.png` (1600×900: the README's first image and the plugin directory's
+cover) and `docs/social-preview.png` (1280×640: GitHub's Settings › General ›
+Social preview, uploaded by hand) are both made by `docs/cover/compose.py` from
+one omabox shot of the stopped card at 3840×2160, scale 3. Its docstring has the
+commands for the shot. Retake them together whenever the card's look changes,
+and upload the social preview again after.
