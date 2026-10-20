@@ -100,8 +100,22 @@ test('no VM, no backup', t => {
   const { env, home } = box(t)
   fs.rmSync(path.join(home, '.windows'), { recursive: true })
   const result = helper('backup.sh', ['plan'], env)
-  assert.equal(result.status, 2)
-  assert.match(result.err, /no VM to back up/)
+  assert.equal(result.status, 3)
+  assert.match(result.err, /nothing to back up yet/)
+})
+
+// Installed but never started: dockur makes data.img on the first boot, so
+// there is a ~/.windows without one. Status 3, which the card reads as
+// "nothing to back up yet" instead of a plan still loading (#28).
+test('a VM that never started has nothing to back up yet', t => {
+  const { env, home } = box(t)
+  fs.rmSync(path.join(home, '.windows', 'data.img'))
+  for (const verb of ['plan', 'run']) {
+    const result = helper('backup.sh', [verb], env)
+    assert.equal(result.status, 3, verb)
+    assert.match(result.err, /nothing to back up yet: .* has no data\.img until Windows first starts/)
+  }
+  assert.deepEqual(fs.readdirSync(home).filter(n => n.startsWith('.windows.bak')), [])
 })
 
 // Cancel is a SIGTERM to the helper: the copy stops and the half-made folder

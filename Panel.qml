@@ -1883,7 +1883,8 @@ Panel {
             InfoPair {
               label: "Windows' disk"
               value: service.currentDisk !== "" ? service.currentDisk : "—"
-              note: backupFace.plan ? State.gbText(backupFace.plan.used) + " written" : ""
+              note: backupFace.plan ? State.gbText(backupFace.plan.used) + " written"
+                : service.backupNothingYet ? "not made yet" : ""
             }
             InfoPair {
               label: "Login"
@@ -1909,10 +1910,13 @@ Panel {
             width: parent.width
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            color: service.backupError !== "" || (backupFace.plan && !backupFace.plan.ok) ? root.urgentColor : root.dim
+            color: service.backupError !== "" || service.backupPlanError !== ""
+              || (backupFace.plan && !backupFace.plan.ok) ? root.urgentColor : root.dim
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: service.backupError !== "" ? "The backup failed: " + service.backupError
+              : service.backupNothingYet ? "Nothing to back up yet: Windows makes its disk the first time it starts. Start it once, then come back."
+              : service.backupPlanError !== "" ? "Couldn't read the VM's size: " + service.backupPlanError
               : !backupFace.plan ? "Reading the VM's size…"
               : !backupFace.plan.ok ? "Not enough room for a full copy. Free some space, or copy ~/.windows to another drive by hand."
               : "Same drive as the original: this saves you from a bad Tune, update or Remove, not from a dead drive. To keep a copy elsewhere, copy that folder off."

@@ -5,6 +5,13 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Fixed
+
+- **Back up VM… no longer waits forever on a VM that never started.** Windows
+  makes its disk on its first start, so there was nothing to copy and the face
+  stayed on "Reading the VM's size…". It now says so, and any other reason it
+  can't read the VM shows on the face too.
+
 ## 0.3.1 — 2026-10-20
 
 ### Fixed

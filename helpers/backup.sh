@@ -16,6 +16,11 @@
 #   target   the folder `run` would make in $HOME
 #   last     mtime, epoch seconds, of the newest earlier backup, or empty
 #
+# Exit status 3, from either: nothing to back up yet. A VM counts as installed
+# once its compose file and login exist, but dockur makes data.img only on
+# Windows' first start, so a VM that never started has no disk to copy. Any
+# other failure is status 2, with the reason on stderr.
+#
 # A backup is a folder next to the original, ~/.windows.bak-<date> (-2, -3…
 # for a second one that day), holding
 #
@@ -57,6 +62,11 @@ spare=$((1024 * 1024 * 1024))
 die() {
   printf '%s\n' "$*" >&2
   exit 2
+}
+
+nothing_yet() {
+  printf '%s\n' "$*" >&2
+  exit 3
 }
 
 [[ $today =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "not a date: $today"
@@ -114,7 +124,8 @@ last_backup() {
 }
 
 plan() {
-  [[ -d $windows && -f $windows/data.img ]] || die "no VM to back up: $windows has no data.img"
+  [[ -d $windows && -f $windows/data.img ]] ||
+    nothing_yet "nothing to back up yet: $windows has no data.img until Windows first starts"
   # "/." so a ~/.windows that is a symlink (Omarchy allows one) is measured
   # where it points, as the copy reads it.
   used=$(occupied "$windows/.") || die "cannot read the size of $windows"

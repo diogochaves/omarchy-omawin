@@ -1182,6 +1182,11 @@ QtObject {
   // Cancel stops the process, and the helper removes its half-made copy.
 
   property var backupPlan: null
+  // Why there is no plan, once `plan` has answered: the helper's exit 3 (a VM
+  // that never started has no data.img yet), or its reason for anything else.
+  // Both empty and no plan means it is still being read.
+  property bool backupNothingYet: false
+  property string backupPlanError: ""
   property double backupCopied: 0
   property string backupDone: ""
   property string backupError: ""
@@ -1195,8 +1200,15 @@ QtObject {
     command: ["/usr/bin/timeout", "-k", "2", "20", "/usr/bin/bash", root.helpers + "/backup.sh", "plan"]
     environment: ({ LC_ALL: "C" })
     stdout: StdioCollector { id: backupPlanOut; waitForEnd: true }
+    stderr: StdioCollector { id: backupPlanErr; waitForEnd: true }
     onExited: function (code) {
       root.backupPlan = code === 0 ? State.parseBackupPlan(root.lastLine(backupPlanOut.text)) : null
+      root.backupNothingYet = code === 3
+      root.backupPlanError = code === 0
+        ? (root.backupPlan ? "" : "the helper's answer was not a plan")
+        : code === 3 ? ""
+        : code === 124 ? "it took more than 20 s"
+        : root.lastLine(backupPlanErr.text) || "the helper exited with status " + code
     }
   }
 
