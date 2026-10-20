@@ -5,6 +5,8 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+## 0.4.0 — 2026-10-20
+
 ### Changed
 
 - **The card's main action stands out.** Start, Connect, Resume and Install…

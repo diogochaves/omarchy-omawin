@@ -108,7 +108,7 @@ Panel {
 
   // Keep this in step with manifest.json: it is only ever printed, on the
   // Settings pill.
-  readonly property string pluginVersion: "0.3.3"
+  readonly property string pluginVersion: "0.4.0"
 
   // The path the Settings face runs `sudo … setup polkit` on, resolved from
   // this file's own location like everything else in the Service.
