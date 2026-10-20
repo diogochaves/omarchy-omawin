@@ -321,3 +321,34 @@ test('on btrfs, list says a fresh backup holds next to nothing of its own', t =>
   assert.equal(b.measured, 'btrfs')
   assert.ok(Number(b.own) < MIB, `own=${b.own}: the copy shares the image's blocks`)
 })
+
+// Delete (#23) takes only a path `list` names: nothing else goes, whatever
+// it is called.
+test('delete removes a listed backup and refuses anything else', t => {
+  const { env, home } = box(t)
+  fakeBackup(path.join(home, '.windows.bak-2026-10-04'), 1791100000)
+  fakeBackup(path.join(home, '.windows.bak-2026-10-05.partial'), 1791100000)
+  fs.mkdirSync(path.join(home, '.windows.bak-2026-10-06'))
+  fs.symlinkSync(env.WINDOWS_DIR, path.join(home, '.windows.bak-2026-10-07'))
+  const refuse = (target, why) => {
+    const result = helper('backup.sh', ['delete', target], env)
+    assert.equal(result.status, 2, `${target}: ${result.out}`)
+    assert.match(result.err, why)
+  }
+  refuse(env.WINDOWS_DIR, /not a backup/)
+  refuse(path.join(home, '.windows.bak-2026-10-05.partial'), /not a backup/)
+  refuse(path.join(home, '.windows.bak-2026-10-06'), /not a backup/)
+  refuse(path.join(home, '.windows.bak-2026-10-07'), /not a backup/)
+  refuse(path.join(home, '.windows.bak-2026-10-04/'), /not a backup/)
+  refuse('/etc', /not a backup/)
+  refuse('', /usage/)
+  assert.ok(fs.existsSync(path.join(env.WINDOWS_DIR, 'data.img')), 'the VM is untouched')
+
+  const target = path.join(home, '.windows.bak-2026-10-04')
+  const result = helper('backup.sh', ['delete', target], env)
+  assert.equal(result.status, 0, result.err)
+  assert.equal(result.out, `deleted=${target}`)
+  assert.equal(fs.existsSync(target), false)
+  assert.ok(fs.existsSync(path.join(home, '.windows.bak-2026-10-05.partial')))
+  assert.ok(fs.existsSync(path.join(env.WINDOWS_DIR, 'data.img')))
+})

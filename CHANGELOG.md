@@ -37,6 +37,10 @@ chaves.omawin` brings you the latest.
   be read while Windows runs. Show folder opens a backup in the file
   manager.
 
+- **Delete a backup from the card.** Delete… on a backup asks in place,
+  saying how much it frees, and deletes only a backup folder the list shows,
+  never the VM itself.
+
 ## 0.3.3 — 2026-10-20
 
 ### Changed

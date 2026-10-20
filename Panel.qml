@@ -311,6 +311,8 @@ Panel {
   // The backup the Backups face has open, by path: it shows its actions.
   // Empty means the newest one.
   property string backupPick: ""
+  // The backup whose Delete… is asking to be confirmed, by path.
+  property string backupConfirm: ""
   property string loginFrom: "live"
   property bool removeAck: false
 
@@ -393,6 +395,8 @@ Panel {
       service.readBackupPlan()
       service.readBackups()
       if (root.face !== "backup") root.backupPick = ""
+      root.backupConfirm = ""
+      service.backupDeleteError = ""
     }
     if (name === "updatePassword") {
       service.clearNotice()
@@ -2040,6 +2044,17 @@ Panel {
           }
 
           Text {
+            visible: service.backupDeleteError !== ""
+            width: parent.width
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.urgentColor
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+            text: "Couldn't delete it: " + service.backupDeleteError
+          }
+
+          Text {
             visible: !backupFace.running && service.backupListRead && service.backupList.length === 0
             width: parent.width
             textFormat: Text.PlainText
@@ -2342,6 +2357,7 @@ Panel {
     id: backupItem
     property var entry: ({})
     property bool open: false
+    readonly property bool confirming: backupItem.open && root.backupConfirm === backupItem.entry.path
 
     width: parent.width
     implicitHeight: backupText.implicitHeight + Style.space(16)
@@ -2358,7 +2374,7 @@ Panel {
       hoverEnabled: true
       enabled: !backupItem.open
       cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-      onClicked: root.backupPick = backupItem.entry.path
+      onClicked: { root.backupPick = backupItem.entry.path; root.backupConfirm = "" }
     }
 
     Column {
@@ -2404,14 +2420,59 @@ Panel {
 
       ActionRow {
         id: backupActions
-        visible: backupItem.open
-        cells: 1
+        visible: backupItem.open && !backupItem.confirming
+        cells: 2
+        ActionButton {
+          width: backupActions.cellWidth
+          iconText: root.trashGlyph
+          text: "Delete…"
+          foreground: root.urgentColor
+          allowed: !service.backupProc.running && service.backupDeleting === ""
+          onClicked: root.backupConfirm = backupItem.entry.path
+        }
         ActionButton {
           width: backupActions.cellWidth
           iconText: root.folderGlyph
           text: "Show folder"
           allowed: true
           onClicked: { service.openFolder(backupItem.entry.path); root.close() }
+        }
+      }
+
+      // Delete confirms in place: what goes and what it frees, then the
+      // two answers, keeping it first.
+      Text {
+        visible: backupItem.confirming
+        width: parent.width
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        color: root.urgentColor
+        font.family: root.family
+        font.pixelSize: Style.font.caption
+        text: service.backupDeleting === backupItem.entry.path ? "Deleting…"
+          : "Delete this backup? " + (backupItem.entry.own > 0
+            ? "It frees " + State.sizeText(backupItem.entry.own) + ". " : "")
+            + "It can't be undone."
+      }
+
+      ActionRow {
+        id: backupConfirmRow
+        visible: backupItem.confirming
+        cells: 2
+        ActionButton {
+          width: backupConfirmRow.cellWidth
+          iconText: root.backGlyph
+          text: "Keep it"
+          allowed: service.backupDeleting === ""
+          onClicked: root.backupConfirm = ""
+        }
+        ActionButton {
+          width: backupConfirmRow.cellWidth
+          iconText: root.trashGlyph
+          text: "Delete"
+          foreground: root.urgentColor
+          allowed: service.backupDeleting === "" && !service.backupProc.running
+          onClicked: service.deleteBackup(backupItem.entry.path)
         }
       }
     }

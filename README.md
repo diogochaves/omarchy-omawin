@@ -116,7 +116,8 @@ o.bind("SUPER + ALT + W", "Windows VM", "omarchy-shell chaves.omawin primary")
   Windows' disk and login into a folder next to the original,
   `~/.windows.bak-<date>` (or beside the folder `~/.windows` points to, if
   you moved it to another drive): instant on btrfs, a full copy elsewhere,
-  with progress and Cancel. Restoring is by hand: see
+  with progress and Cancel. **Delete…** on a backup asks first, then
+  frees what it said. Restoring is by hand: see
   [Restoring a backed-up VM](#restoring-a-backed-up-vm).
 - **Remove VM…** (in Settings, VM off) deletes Windows and everything in it,
   for a fresh start or a smaller disk. It lists what goes and what stays, and

@@ -11,6 +11,9 @@
 #   helpers/backup.sh list   one line per backup on disk, newest first:
 #                            when=1792504162 own=0 measured=btrfs same=1
 #                            path=/mnt/data/windows.bak-2026-10-20
+#   helpers/backup.sh delete PATH
+#                            deletes that backup, and only a folder `list`
+#                            shows: `deleted=<path>`
 #
 #   ok       there is room for the copy (1/0)
 #   reflink  the VM's folder and `where` are on one btrfs or XFS filesystem,
@@ -246,6 +249,25 @@ print_list() {
   done < <(backups)
 }
 
+# A backup goes only by its exact path as `list` names it, so nothing else
+# (the VM's own folder, a half-made copy, a symlink, a folder that merely
+# looks like one) can be passed in.
+delete_backup() {
+  local target=${1-} dir found= real vm
+  [[ -n $target ]] || die "usage: backup.sh delete PATH"
+  [[ -d $windows ]] || nothing_yet "nothing to delete: there is no $windows"
+  choose_root
+  while IFS=$'\t' read -r _ dir; do
+    [[ $dir == "$target" ]] && found=1
+  done < <(backups)
+  [[ -n $found ]] || die "not a backup: $target"
+  real=$(/usr/bin/realpath -e -- "$target" 2>/dev/null) || die "cannot read $target"
+  vm=$(/usr/bin/realpath -e -- "$windows" 2>/dev/null) || die "cannot read $windows"
+  [[ $real != "$vm" && $vm != "$real"/* ]] || die "refusing to delete the VM itself: $target"
+  /usr/bin/rm -rf -- "$real" || die "could not delete $target"
+  printf 'deleted=%s\n' "$target"
+}
+
 # The copy and the VM's folder on one filesystem.
 same_drive() {
   local src dst
@@ -357,5 +379,6 @@ case ${1-} in
   plan) print_plan ;;
   run) run ;;
   list) print_list ;;
-  *) die "usage: backup.sh plan | run | list" ;;
+  delete) delete_backup "${2-}" ;;
+  *) die "usage: backup.sh plan | run | list | delete PATH" ;;
 esac

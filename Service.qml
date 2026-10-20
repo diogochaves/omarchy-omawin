@@ -1286,6 +1286,33 @@ QtObject {
     }
   }
 
+  // Delete one backup, by the path the list gave: the helper deletes only a
+  // folder its own list names. Its answer, on failure, is the face's to show.
+  property string backupDeleting: ""
+  property string backupDeleteError: ""
+
+  function deleteBackup(path) {
+    var known = false
+    for (var i = 0; i < root.backupList.length && !known; i++)
+      known = root.backupList[i].path === path
+    if (!known || backupDeleteProc.running || backupProc.running) return
+    root.backupDeleteError = ""
+    root.backupDeleting = path
+    backupDeleteProc.running = true
+  }
+
+  property Process backupDeleteProc: Process {
+    command: ["/usr/bin/timeout", "-k", "5", "600", "/usr/bin/bash", root.helpers + "/backup.sh", "delete", root.backupDeleting]
+    environment: ({ LC_ALL: "C" })
+    stderr: StdioCollector { id: backupDeleteErr; waitForEnd: true }
+    onExited: function (code) {
+      if (code !== 0) root.backupDeleteError = root.lastLine(backupDeleteErr.text) || "could not delete it"
+      root.backupDeleting = ""
+      root.readBackups()
+      root.readBackupPlan()
+    }
+  }
+
   // The newest backup's row in Settings: "2 · last 20 Oct", "none yet".
   readonly property string backupsText: !root.backupListRead ? ""
     : root.backupList.length === 0 ? "none yet"
