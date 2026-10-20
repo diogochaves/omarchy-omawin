@@ -13,6 +13,12 @@ chaves.omawin` brings you the latest.
   others. They now take turns, so if that monitor's bar goes away, the next
   one answers.
 
+### Changed
+
+- **Install is off on ARM machines.** Omarchy 4.5 runs on ARM, where its
+  Windows VM can't (dockur's image is x86_64 only); the card says so instead
+  of opening an installer that fails.
+
 ### Added
 
 - **Clean shutdown.** Omarchy gives every service 5 seconds to stop when you

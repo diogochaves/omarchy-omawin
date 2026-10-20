@@ -102,7 +102,26 @@ QtObject {
         stop: allowed.stop && root.state !== "booting"
       })
     }
+    // omarchy-windows-vm runs dockur's x86_64 image and refuses other
+    // machines (Omarchy 4.5 runs on ARM too): Install, and Restore after
+    // Remove VM, would only open a terminal that fails.
+    if (!root.x86) allowed = Object.assign({}, allowed, { install: false })
     return allowed
+  }
+
+  // The machine, read once: `uname -m`. Unknown counts as x86_64, the only
+  // machine Omarchy ran on before 4.5.
+  property string machine: ""
+  readonly property bool x86: root.machine === "" || root.machine === "x86_64"
+
+  property Process machineProc: Process {
+    running: true
+    command: ["/usr/bin/uname", "-m"]
+    stdout: StdioCollector { id: machineOut; waitForEnd: true }
+    onExited: function (code) {
+      var line = root.lastLine(machineOut.text)
+      if (code === 0 && /^[A-Za-z0-9_]{1,32}$/.test(line)) root.machine = line
+    }
   }
   // The reason the booting card gives for its greyed-out Stop.
   readonly property bool stopHeldByLauncher: root.sessionOpen && root.state === "booting"

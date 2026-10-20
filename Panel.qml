@@ -812,6 +812,8 @@ Panel {
           font.family: root.family
           font.pixelSize: Style.font.caption
           text: {
+            if (root.vmState === "not-installed" && !service.x86)
+              return "Omarchy's Windows VM runs on x86_64 PCs only, and this machine is " + service.machine + "."
             if (root.vmState === "not-installed")
               return "No Windows VM on this machine. The installer asks for RAM, cores, disk size and a login, then downloads Windows 11 (10–15 min). It runs in a floating terminal."
                 + (service.backupList.length === 1 ? " Restore… brings back the backup you have instead."
