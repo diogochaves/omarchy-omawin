@@ -5,6 +5,8 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+## 0.5.0 — 2026-10-20
+
 ### Fixed
 
 - **One bar answers the key binding, and another takes over.** With several
