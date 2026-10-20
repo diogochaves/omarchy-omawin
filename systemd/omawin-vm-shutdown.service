@@ -16,7 +16,7 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/bin/true
 ExecStop=-/usr/bin/docker unpause omarchy-windows
-ExecStop=-/usr/bin/docker stop --time 120 omarchy-windows
+ExecStop=-/usr/bin/docker stop -t 120 omarchy-windows
 TimeoutStopSec=150
 
 [Install]

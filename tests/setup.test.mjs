@@ -470,7 +470,7 @@ test('shutdown installs the unit as shown, enables it and arms it while Docker r
   assert.equal(result.status, 0, result.out)
   const installed = fs.readFileSync(path.join(units, UNIT), 'utf8')
   assert.equal(installed, fs.readFileSync(path.join(root, 'systemd', UNIT), 'utf8'))
-  assert.ok(result.out.includes('ExecStop=-/usr/bin/docker stop --time 120 omarchy-windows'), 'the unit is shown')
+  assert.ok(result.out.includes('ExecStop=-/usr/bin/docker stop -t 120 omarchy-windows'), 'the unit is shown')
   assert.deepEqual(calls(), ['daemon-reload', `enable ${UNIT}`, '-q is-active docker.service', `start ${UNIT}`])
 })
 

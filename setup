@@ -31,7 +31,7 @@
 # The unit goes to /etc/systemd/system, enabled as wanted by docker.service,
 # and is started (its start does nothing) if Docker runs. It is ordered after
 # docker.service, so systemd stops it first: its stop resumes a paused VM and
-# stops it with `docker stop --time 120`, before Omarchy's 5 s limit can kill
+# stops it with `docker stop -t 120`, before Omarchy's 5 s limit can kill
 # it with Docker. Removing it never stops it: that would shut Windows down. It
 # stays armed until the next reboot, which is harmless. Unlike the rules
 # directory, /etc/systemd/system is world-readable, so the widget asks

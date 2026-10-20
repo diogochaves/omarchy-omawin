@@ -1933,7 +1933,7 @@ Panel {
               font.pixelSize: Style.font.caption
               text: "When Docker stops, just before it:\n"
                 + "/usr/bin/docker unpause omarchy-windows\n"
-                + "/usr/bin/docker stop --time 120 omarchy-windows"
+                + "/usr/bin/docker stop -t 120 omarchy-windows"
             }
           }
 

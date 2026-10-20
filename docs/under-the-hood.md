@@ -165,7 +165,7 @@ to `/etc/systemd/system` and enables it as wanted by `docker.service`). The
 unit is `BindsTo=` and `After=docker.service`, so it starts with Docker and is
 stopped just before it, at a shutdown and at a `systemctl restart docker`
 alike. Its start does nothing; its stop runs `docker unpause omarchy-windows`
-and `docker stop --time 120 omarchy-windows`, each allowed to fail (no VM, or
+and `docker stop -t 120 omarchy-windows`, each allowed to fail (no VM, or
 one already off, costs nothing), with `TimeoutStopSec=150`. It runs no file
 of the plugin's, so it can't be changed from the user's side and outlives the
 plugin harmlessly. `--remove` disables and deletes it without stopping it,
