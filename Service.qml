@@ -1296,7 +1296,7 @@ QtObject {
     var known = false
     for (var i = 0; i < root.backupList.length && !known; i++)
       known = root.backupList[i].path === path
-    if (!known || backupDeleteProc.running || backupProc.running) return
+    if (!known || backupDeleteProc.running || backupProc.running || restoreProc.running) return
     root.backupDeleteError = ""
     root.backupDeleting = path
     backupDeleteProc.running = true
@@ -1326,11 +1326,18 @@ QtObject {
   property string restoreDone: ""
   property string restoreError: ""
   property bool restoreCancelled: false
+  // The shape the helper wrote into the compose, "3 4G 64G", or "".
+  property string restoreComposed: ""
+
+  // When the backup being restored was made, for the card's notice.
+  property double restoreWhen: 0
 
   function restoreBackup(path) {
     var known = false
-    for (var i = 0; i < root.backupList.length && !known; i++)
+    for (var i = 0; i < root.backupList.length && !known; i++) {
       known = root.backupList[i].path === path
+      if (known) root.restoreWhen = root.backupList[i].when
+    }
     if (!known || root.busy || !root.actions.start) return
     root.clearRestore()
     root.restorePath = path
@@ -1351,6 +1358,7 @@ QtObject {
     root.restoreDone = ""
     root.restoreError = ""
     root.restoreCancelled = false
+    root.restoreComposed = ""
   }
 
   property Process restoreProc: Process {
@@ -1367,17 +1375,35 @@ QtObject {
         var safety = State.parseBackupDone(line)
         if (safety !== "") root.restoreSafety = safety
         if (line === "restored=" + root.restorePath) root.restoreDone = root.restorePath
+        var composed = /^composed=([0-9]{1,2}) ([0-9]{1,3}G) ([0-9]{1,4}G)$/.exec(line)
+        if (composed) root.restoreComposed = composed[1] + " " + composed[2] + " " + composed[3]
       }
     }
     stderr: StdioCollector { id: restoreErr; waitForEnd: true }
     onExited: function (code) {
       var message = root.lastLine(restoreErr.text)
-      if (code !== 0 && !root.restoreCancelled)
+      // A cancel only counts if the helper took it: past the copy it
+      // ignores SIGTERM, and its own failures (1, 2) still have to be said.
+      var cancelled = root.restoreCancelled && code !== 0 && code !== 1 && code !== 2
+      if (code !== 0 && !cancelled)
         root.restoreError = root.dismissed(message)
           ? "you closed the password dialog, so nothing changed."
           : message || "the restore failed"
       if (code !== 0) root.restoreDone = ""
       root.restoreStep = ""
+      // A compose rewritten with the backup's disk is the shape the next
+      // start uses: the card says so, as after Tune, and a later Save
+      // carries it rather than a Tune it replaced.
+      if (code === 0 && root.restoreComposed !== "") {
+        var shape = root.restoreComposed.split(" ")
+        root.writePending({ cores: Number(shape[0]), ram: shape[1], disk: shape[2] })
+      }
+      // The outcome also lands on the card, for a card closed meanwhile.
+      if (code === 0 && root.restoreDone !== "")
+        root.notice("Restored. Windows is back to "
+          + State.whenText(root.restoreWhen * 1000, Date.now()) + "; the VM it replaced is kept as a backup.", true)
+      else if (code !== 0 && !cancelled && root.restoreError !== "")
+        root.notice("Not restored: " + root.restoreError, false)
       root.readBackups()
       root.readBackupPlan()
       root.refresh()

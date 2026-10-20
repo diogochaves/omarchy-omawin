@@ -401,7 +401,9 @@ Panel {
       root.removeAck = false
     }
     if (name === "backup") {
-      root.backupFrom = root.face === "tune" || root.face === "remove" ? root.face : "settings"
+      // Back from Restore keeps the way Backups was entered.
+      if (root.face !== "restore" && root.face !== "backup")
+        root.backupFrom = root.face === "tune" || root.face === "remove" ? root.face : "settings"
       // A finished or failed copy is shown once; the next visit starts over.
       if (!service.backupProc.running) service.clearBackup()
       service.readBackupPlan()
@@ -411,7 +413,9 @@ Panel {
       service.backupDeleteError = ""
     }
     if (name === "restore") {
-      if (!service.restoreProc.running) service.clearRestore()
+      // An outcome is kept until Done, even across the card closing; a new
+      // backup picked starts over.
+      if (!service.restoreProc.running && service.restorePath !== root.restorePick) service.clearRestore()
       root.restoreAck = false
       service.readBackupPlan()
     }
@@ -2626,7 +2630,7 @@ Panel {
           iconText: root.trashGlyph
           text: "Delete…"
           foreground: root.urgentColor
-          allowed: !service.backupProc.running && service.backupDeleting === ""
+          allowed: !service.backupProc.running && !service.restoreProc.running && service.backupDeleting === ""
           onClicked: root.backupConfirm = backupItem.entry.path
         }
         ActionButton {
@@ -2670,7 +2674,7 @@ Panel {
           iconText: root.trashGlyph
           text: "Delete"
           foreground: root.urgentColor
-          allowed: service.backupDeleting === "" && !service.backupProc.running
+          allowed: service.backupDeleting === "" && !service.backupProc.running && !service.restoreProc.running
           onClicked: service.deleteBackup(backupItem.entry.path)
         }
       }

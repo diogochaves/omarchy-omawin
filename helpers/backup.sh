@@ -18,8 +18,9 @@
 #                            puts that backup back as the VM (see "Restore"
 #                            below): `step=` and `copied=` lines while it
 #                            works, `done=<safety backup>` once that is made,
-#                            then `restored=<path>`; SIGTERM cancels it while
-#                            it copies
+#                            `composed=<cores> <ram> <disk>` if it rewrote the
+#                            compose, then `restored=<path>`; SIGTERM cancels
+#                            it while it copies
 #
 #   ok       there is room for the copy (1/0)
 #   reflink  the VM's folder and `where` are on one btrfs or XFS filesystem,
@@ -95,16 +96,17 @@
 #   2. the backup's windows/ copied into a hidden folder beside the VM's real
 #      folder, +C when its data.img is, so on btrfs it shares the backup's
 #      blocks. The VM is untouched so far, and Cancel removes this copy
-#   3. only when the backup's login or disk size differs from the VM's, the
-#      compose rewritten through `pkexec omarchy-windows-vm __priv
-#      write_compose`, the one dialog Tune and Login's Save ask, with the
-#      backup's login and disk: a dismissed dialog removes the copy and
-#      changes nothing (the safety backup stays, in the list)
-#   4. two renames on that one filesystem: the VM's folder aside, the copy in
-#      its place (~/.windows, a symlink or not, keeps pointing at it), and
-#      the old folder deleted, since step 1 holds it
-#   5. the backup's credentials file back as ~/.config/windows/credentials,
-#      0600, atomically, when it has one
+#   3. the swap, keeping the VM's folder itself (Omarchy pins it by device
+#      and inode and checks that on every start): its entries renamed out to
+#      a hidden folder beside it, the staged ones renamed in
+#   4. only when the backup's login or disk size differs, the compose
+#      rewritten through `pkexec omarchy-windows-vm __priv write_compose`,
+#      the one dialog Tune and Login's Save ask, with the backup's login and
+#      disk; a dismissed dialog or a failure swaps the VM's own files back,
+#      so nothing has changed (the safety backup stays, in the list)
+#   5. the old files deleted (step 1 holds them), and the backup's
+#      credentials file back as ~/.config/windows/credentials, 0600,
+#      atomically, when it has one
 #
 # The password is read from the backup's file and piped to pkexec, never an
 # argument. The card passes the cores, RAM and disk the next start would use,
@@ -118,7 +120,8 @@
 #   FREE_BYTES, REFLINK  override the two readings, for the tests
 #   VM_RUNNING        =1/0 instead of asking vm-state.sh, for the tests
 #   TZ_NAME           skip timedatectl, use this value
-#   RESTORE_DRY_RUN   =1 skips the pkexec step and says what it would write
+#   RESTORE_DRY_RUN   =1 skips the pkexec step and says what it would write;
+#                     =dismiss answers as a dismissed dialog would
 #   NOCOW, NOCOW_SET     override whether data.img is +C and whether the
 #                        partial folder takes +C (1/0), for the tests
 
@@ -368,11 +371,26 @@ save_login() {
 }
 
 staging=
+aside=
 
-# Cancel, or a failure before the swap: the hidden copy goes, the VM stays.
+# Every entry of one folder into another, dotfiles included, by rename.
+move_entries() {
+  local from=$1 to=$2
+  [[ -z $(/usr/bin/find "$from" -mindepth 1 -maxdepth 1 -print -quit) ]] && return 0
+  /usr/bin/find "$from" -mindepth 1 -maxdepth 1 -exec /usr/bin/mv -t "$to" -- {} +
+}
+
+# After the swap: the backup's files back out to staging, the VM's own back in.
+swap_back() {
+  move_entries "$real" "$staging" && move_entries "$aside" "$real" &&
+    /usr/bin/rmdir -- "$aside" && aside=
+}
+
+# Cancel, or a failure: the hidden copy goes, the VM stays.
 abandon_restore() {
   [[ -n $copy_pid ]] && kill "$copy_pid" 2>/dev/null && wait "$copy_pid" 2>/dev/null
   [[ -n $staging && -d $staging ]] && /usr/bin/rm -rf -- "$staging"
+  [[ -n $staging ]] && /usr/bin/rm -f -- "$staging.errors"
   return 0
 }
 
@@ -484,40 +502,59 @@ restore_backup() {
   # From here nothing is half-done for long: no cancel.
   trap '' TERM INT HUP
 
-  # 3. the compose, when the login or the disk differs
+  # 3. the swap. Omarchy pins ~/.windows by device and inode: it binds that
+  # folder into its own mount tree and checks the pin on every start, so the
+  # folder itself must stay. Its entries move out to a hidden folder beside
+  # it and the staged ones move in: renames on one filesystem.
+  echo "step=swap"
+  aside=$parent/.$name.replaced
+  [[ ! -e $aside ]] || /usr/bin/rm -rf -- "$aside"
+  ( umask 077 && /usr/bin/mkdir -- "$aside" ) || { abandon_restore; die "cannot make $aside"; }
+  if ! move_entries "$real" "$aside"; then
+    move_entries "$aside" "$real"
+    /usr/bin/rmdir -- "$aside"
+    aside=
+    abandon_restore
+    die "could not move the VM's files aside; the VM is as it was"
+  fi
+  if ! move_entries "$staging" "$real"; then
+    swap_back || die "could not put the backup in place, nor the VM's own files back: they are in $aside; move them into $real"
+    abandon_restore
+    die "could not put the backup in place; the VM is as it was"
+  fi
+
+  # 4. the compose, when the login or the disk differs: last, so a dismissed
+  # dialog or a failure puts the VM's own files back and nothing has changed
   if ((compose)); then
     echo "step=compose"
+    status=0
+    local message=
     if [[ ${RESTORE_DRY_RUN-} == 1 ]]; then
       echo "dry run: compose not rewritten (RAM=$ram CORES=$cores DISK=$bdisk USERNAME=$bu)"
+    elif [[ ${RESTORE_DRY_RUN-} == dismiss ]]; then
+      message="Error executing command as another user: Request dismissed"
+      status=126
     else
-      local message
-      status=0
       message=$(printf 'RAM=%s\nCORES=%s\nDISK=%s\nUSERNAME=%s\nPASSWORD=%s\nTZ=%s\n' \
         "$ram" "$cores" "$bdisk" "$bu" "$bp" "$(timezone)" |
         /usr/bin/pkexec /usr/bin/omarchy-windows-vm __priv write_compose 2>&1 >/dev/null) ||
         status=$?
-      if ((status != 0)); then
-        abandon_restore
-        printf '%s\n' "${message:-write_compose exited with status $status}" | /usr/bin/head -c 2048 >&2
-        exit 1
-      fi
     fi
+    if ((status != 0)); then
+      swap_back || die "the compose was not rewritten, and the VM's own files could not be put back: they are in $aside; move them into $real"
+      abandon_restore
+      printf '%s\n' "${message:-write_compose exited with status $status}" | /usr/bin/head -c 2048 >&2
+      exit 1
+    fi
+    # The shape the next start will use, for the card's "next start" line.
+    printf 'composed=%s %s %s\n' "$cores" "$ram" "$bdisk"
   fi
 
-  # 4. the swap: two renames on one filesystem
-  echo "step=swap"
-  local aside=$parent/.$name.replaced
-  [[ ! -e $aside ]] || /usr/bin/rm -rf -- "$aside"
-  /usr/bin/mv -T -- "$real" "$aside" || { abandon_restore; die "could not move $real aside; the VM is as it was"; }
-  if ! /usr/bin/mv -T -- "$staging" "$real"; then
-    /usr/bin/mv -T -- "$aside" "$real"
-    abandon_restore
-    die "could not put the backup in place; the VM is as it was"
-  fi
-  staging=
+  # 5. done: the VM's old files go (step 1 holds them), and the login
   /usr/bin/rm -rf -- "$aside"
-
-  # 5. the login
+  aside=
+  /usr/bin/rmdir -- "$staging" 2>/dev/null
+  staging=
   if [[ $bu != "$cu" || $bp != "$cp" ]]; then
     save_login "$bu" "$bp" || die "the disk is restored but $credentials could not be rewritten: copy the backup's credentials file over it"
   fi

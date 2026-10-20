@@ -381,11 +381,16 @@ const firstByte = file => {
 test('restore puts the backup back and keeps the VM it replaced', t => {
   const { env, home, backup, image } = restoreBox(t)
   const args = ['restore', backup, '--cores', '3', '--ram', '4G', '--disk', '64G']
+  // Omarchy pins the VM's folder by device and inode: it has to stay.
+  const pin = fs.statSync(env.WINDOWS_DIR)
   const result = helper('backup.sh', args, env)
   assert.equal(result.status, 0, result.err)
   const steps = result.out.split('\n').filter(l => l.startsWith('step=')).map(l => l.slice(5))
-  assert.deepEqual(steps, ['safety', 'copy', 'compose', 'swap'])
+  assert.deepEqual(steps, ['safety', 'copy', 'swap', 'compose'])
   assert.match(result.out, /dry run: compose not rewritten \(RAM=4G CORES=3 DISK=64G USERNAME=chaves\)/)
+  assert.match(result.out, /\ncomposed=3 4G 64G\n/)
+  const after = fs.statSync(env.WINDOWS_DIR)
+  assert.deepEqual([after.dev, after.ino, after.mode & 0o777], [pin.dev, pin.ino, pin.mode & 0o777])
   assert.match(result.out, new RegExp(`\\nrestored=${backup}$`))
   // The backup's bytes are the VM's again, and its login.
   assert.equal(firstByte(image), 7)
@@ -457,4 +462,22 @@ test('on btrfs, a restored +C disk shares its blocks with the backup', t => {
   assert.match(lsattr(path.join(env.WINDOWS_DIR, 'data.img')), /C/)
   const extents = spawnSync('/usr/bin/filefrag', ['-v', path.join(env.WINDOWS_DIR, 'data.img')], { encoding: 'utf8' }).stdout
   assert.match(extents, /shared/, 'the restored disk shares the backup\'s blocks')
+})
+
+// A dismissed dialog comes after the swap: the VM's own files go back in,
+// and nothing has changed but the safety backup.
+test('restore with the dialog dismissed puts the VM back as it was', t => {
+  const { env, home, backup, image } = restoreBox(t)
+  const pin = fs.statSync(env.WINDOWS_DIR)
+  const result = helper('backup.sh', ['restore', backup, '--cores', '3', '--ram', '4G', '--disk', '64G'],
+    { ...env, RESTORE_DRY_RUN: 'dismiss' })
+  assert.equal(result.status, 1)
+  assert.match(result.err, /Request dismissed/)
+  assert.doesNotMatch(result.out, /restored=|composed=/)
+  assert.equal(firstByte(image), 9)
+  assert.equal(fs.readFileSync(env.CREDENTIALS_FILE, 'utf8'), 'USERNAME=other\nPASSWORD=changed\n')
+  assert.equal(fs.statSync(env.WINDOWS_DIR).ino, pin.ino)
+  assert.deepEqual(fs.readdirSync(env.WINDOWS_DIR).sort(), ['data.img', 'windows.ver'])
+  assert.deepEqual(fs.readdirSync(home).filter(n => /restoring|replaced|partial|errors/.test(n)), [])
+  assert.ok(fs.existsSync(path.join(home, '.windows.bak-2026-10-04-2')), 'the safety backup stays')
 })
