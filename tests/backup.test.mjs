@@ -8,7 +8,9 @@ import { helper, root } from './helpers.mjs'
 
 // helpers/backup.sh against a throwaway home: a ~/.windows with a sparse
 // data.img that has a little written to it, and a credentials file.
-// FREE_BYTES and REFLINK stand in for df and the filesystem type.
+// FREE_BYTES and REFLINK stand in for df and the filesystem type; HOME is
+// the throwaway home, and BACKUP_ROOT pins the backup there unless a test
+// is about where it goes.
 const MIB = 1024 * 1024
 
 function box(t, { written = 1, credentials = true, under = os.tmpdir() } = {}) {
@@ -29,7 +31,7 @@ function box(t, { written = 1, credentials = true, under = os.tmpdir() } = {}) {
   return {
     home,
     env: {
-      WINDOWS_DIR: windows, CREDENTIALS_FILE: creds, BACKUP_ROOT: home,
+      HOME: home, WINDOWS_DIR: windows, CREDENTIALS_FILE: creds, BACKUP_ROOT: home,
       TODAY: '2026-10-04', FREE_BYTES: String(500 * 1024 ** 3), REFLINK: '0'
     }
   }
@@ -72,7 +74,7 @@ test('run copies the disk, sparse, and the login, 0600', t => {
   const result = helper('backup.sh', ['run'], env)
   assert.equal(result.status, 0, result.err)
   assert.match(result.out, /copied=[0-9]+/)
-  assert.match(result.out, /\ndone=\.windows\.bak-2026-10-04$/)
+  assert.match(result.out, /\ndone=\/.*\/\.windows\.bak-2026-10-04$/)
   const backup = path.join(home, '.windows.bak-2026-10-04')
   const image = fs.statSync(path.join(backup, 'windows/data.img'))
   assert.equal(image.size, 64 * 1024 ** 3)
@@ -152,7 +154,7 @@ test('a +C image whose copy cannot be +C needs the room for a full copy', t => {
   // With the room, it makes the full copy.
   const result = helper('backup.sh', ['run'], nocow)
   assert.equal(result.status, 0, result.err)
-  assert.match(result.out, /\ndone=\.windows\.bak-2026-10-04$/)
+  assert.match(result.out, /\ndone=\/.*\/\.windows\.bak-2026-10-04$/)
 })
 
 // The real thing, where a btrfs folder is at hand (OMAWIN_TEST_BTRFS, or
@@ -190,4 +192,65 @@ test('on btrfs, a +C image is copied +C and shares its blocks', t => {
   assert.match(lsattr(copy), /C/)
   const extents = spawnSync('/usr/bin/filefrag', ['-v', copy], { encoding: 'utf8' }).stdout
   assert.match(extents, /shared/, 'the copy shares the original\'s blocks')
+})
+
+// Where it goes (#31): beside the VM's real folder, so on its drive. A
+// ~/.windows that points at another folder gets its backup there.
+test('a backup goes beside the folder ~/.windows points to', t => {
+  const { env, home } = box(t, { written: 2 })
+  const drive = path.join(home, 'data')
+  fs.mkdirSync(drive)
+  fs.renameSync(env.WINDOWS_DIR, path.join(drive, 'windows'))
+  fs.symlinkSync(path.join(drive, 'windows'), env.WINDOWS_DIR)
+  fs.mkdirSync(path.join(home, '.windows.bak-2026-10-01'))
+  const beside = { ...env }
+  delete beside.BACKUP_ROOT
+  const plan = helper('backup.sh', ['plan'], beside)
+  assert.equal(plan.status, 0, plan.err)
+  const f = fields(plan.out)
+  assert.equal(f.where, drive)
+  assert.equal(f.target, 'windows.bak-2026-10-04')
+  assert.equal(f.same, '1')
+  // A backup an earlier version left in $HOME still counts as the last one.
+  assert.match(f.last, /^[0-9]+$/)
+  assert.match(plan.out, / where=[^ ]+$/, 'where comes last')
+  const result = helper('backup.sh', ['run'], beside)
+  assert.equal(result.status, 0, result.err)
+  assert.match(result.out, new RegExp(`\ndone=${drive}/windows\\.bak-2026-10-04$`))
+  assert.equal(fs.statSync(path.join(drive, 'windows.bak-2026-10-04/windows/data.img')).size, 64 * 1024 ** 3)
+  assert.equal(fs.existsSync(path.join(drive, 'windows.bak-2026-10-04/credentials')), true)
+})
+
+test('a folder beside it that is not writable falls back to $HOME', t => {
+  const { env, home } = box(t)
+  const drive = path.join(home, 'locked')
+  fs.mkdirSync(drive)
+  fs.renameSync(env.WINDOWS_DIR, path.join(drive, 'windows'))
+  fs.symlinkSync(path.join(drive, 'windows'), env.WINDOWS_DIR)
+  const beside = { ...env }
+  delete beside.BACKUP_ROOT
+  fs.chmodSync(drive, 0o555)
+  let f
+  try {
+    f = fields(helper('backup.sh', ['plan'], beside).out)
+  } finally {
+    fs.chmodSync(drive, 0o755)
+  }
+  assert.equal(f.where, home)
+  assert.equal(f.target, '.windows.bak-2026-10-04')
+})
+
+// Another drive: same=0, which the face says, since that copy also outlives
+// the drive the VM is on. Needs two filesystems: the tmpdir and a btrfs one.
+test('a backup on another filesystem says same=0', t => {
+  const under = btrfsDir()
+  if (!under) return t.skip('no second filesystem (set OMAWIN_TEST_BTRFS)')
+  const { env } = box(t)
+  if (spawnSync('/usr/bin/stat', ['-f', '-c', '%T', os.tmpdir()], { encoding: 'utf8' }).stdout.trim() === 'btrfs')
+    return t.skip('the tmpdir is btrfs too')
+  const other = fs.mkdtempSync(path.join(under, 'omawin-backup-root-'))
+  t.after(() => fs.rmSync(other, { recursive: true, force: true }))
+  const f = fields(helper('backup.sh', ['plan'], { ...env, BACKUP_ROOT: other }).out)
+  assert.equal(f.same, '0')
+  assert.equal(f.where, other)
 })

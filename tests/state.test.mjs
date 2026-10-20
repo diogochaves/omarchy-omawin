@@ -643,13 +643,27 @@ test('tooltip names the key on the stopped and ready states', () => {
 
 test('parseBackupPlan reads the helper line and refuses anything else', () => {
   const plan = State.parseBackupPlan(
-    'ok=1 reflink=0 used=24696061952 free=1616073883648 target=.windows.bak-2026-10-04-2 last=1790812800\n')
-  assert.deepEqual(plan, { ok: true, reflink: false, used: 24696061952, free: 1616073883648,
-    target: '.windows.bak-2026-10-04-2', last: 1790812800 })
-  assert.equal(State.parseBackupPlan('ok=1 reflink=1 used=1 free=2 target=.windows.bak-2026-10-04 last=').last, 0)
-  assert.equal(State.parseBackupPlan('ok=1 reflink=1 used=1 free=2 target=../etc last='), null)
-  assert.equal(State.parseBackupPlan('ok=yes reflink=1 used=1 free=2 target=.windows.bak-2026-10-04 last='), null)
+    'ok=1 reflink=0 same=1 used=24696061952 free=1616073883648 target=.windows.bak-2026-10-04-2 last=1790812800 where=/home/me\n')
+  assert.deepEqual(plan, { ok: true, reflink: false, same: true, used: 24696061952, free: 1616073883648,
+    target: '.windows.bak-2026-10-04-2', last: 1790812800, where: '/home/me' })
+  const line = (target, where) => `ok=1 reflink=1 same=0 used=1 free=2 target=${target} last= where=${where}`
+  assert.equal(State.parseBackupPlan(line('.windows.bak-2026-10-04', '/home/me')).last, 0)
+  // Beside a ~/.windows that points elsewhere, and a folder with spaces.
+  assert.equal(State.parseBackupPlan(line('windows.bak-2026-10-04', '/mnt/my data')).where, '/mnt/my data')
+  assert.equal(State.parseBackupPlan(line('windows.bak-2026-10-04', '/mnt/data')).same, false)
+  assert.equal(State.parseBackupPlan(line('../etc', '/home/me')), null)
+  assert.equal(State.parseBackupPlan(line('.windows.bak-2026-10-04', 'relative')), null)
+  assert.equal(State.parseBackupPlan(line('.windows.bak-2026-10-04', '/home/../etc')), null)
+  assert.equal(State.parseBackupPlan('ok=1 reflink=1 used=1 free=2 target=.windows.bak-2026-10-04 last='), null)
+  assert.equal(State.parseBackupPlan('ok=yes reflink=1 same=1 used=1 free=2 target=.windows.bak-2026-10-04 last= where=/h'), null)
   assert.equal(State.parseBackupPlan(''), null)
+  assert.equal(State.parseBackupDone('done=/mnt/data/windows.bak-2026-10-20-2'), '/mnt/data/windows.bak-2026-10-20-2')
+  assert.equal(State.parseBackupDone('done=/home/me/.windows.bak-2026-10-20'), '/home/me/.windows.bak-2026-10-20')
+  assert.equal(State.parseBackupDone('done=/etc/passwd'), '')
+  assert.equal(State.parseBackupDone('done=.windows.bak-2026-10-20'), '')
+  assert.equal(State.tildePath('/home/me/.windows.bak-2026-10-20', '/home/me'), '~/.windows.bak-2026-10-20')
+  assert.equal(State.tildePath('/home/meow/x', '/home/me'), '/home/meow/x')
+  assert.equal(State.tildePath('/mnt/data/windows.bak-2026-10-20', '/home/me'), '/mnt/data/windows.bak-2026-10-20')
   assert.equal(State.gbText(24696061952), '23 GB')
   assert.equal(State.gbText(1), '1 GB')
   assert.equal(State.gbText(0), '0 GB')

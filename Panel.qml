@@ -1862,7 +1862,8 @@ Panel {
 
         // =========================== Back up VM ============================
         // helpers/backup.sh plan/run: ~/.windows and the credentials file into
-        // ~/.windows.bak-<date>, as the user, VM off. Four states: the plan
+        // <name>.bak-<date> beside the VM's real folder (or $HOME), as the
+        // user, VM off. Four states: the plan
         // (with the room check), copying (progress, Cancel), done, failed.
         Column {
           id: backupFace
@@ -1893,7 +1894,8 @@ Panel {
             }
             InfoPair {
               label: "Copy to"
-              value: backupFace.plan ? "~/" + backupFace.plan.target : "—"
+              value: backupFace.plan
+                ? State.tildePath(backupFace.plan.where + "/" + backupFace.plan.target, service.home) : "—"
             }
             InfoPair {
               label: "Space"
@@ -1919,7 +1921,9 @@ Panel {
               : service.backupPlanError !== "" ? "Couldn't read the VM's size: " + service.backupPlanError
               : !backupFace.plan ? "Reading the VM's size…"
               : !backupFace.plan.ok ? "Not enough room for a full copy. Free some space, or copy ~/.windows to another drive by hand."
-              : "Same drive as the original: this saves you from a bad Tune, update or Remove, not from a dead drive. To keep a copy elsewhere, copy that folder off."
+              : backupFace.plan.same
+                ? "Same drive as the original: this saves you from a bad Tune, update or Remove, not from a dead drive. To keep a copy elsewhere, copy that folder off."
+                : "On another drive than the original, so it also outlives that drive. It's a full copy, as a copy across drives always is."
           }
 
           ActionRow {
@@ -1985,7 +1989,7 @@ Panel {
           InfoPair {
             visible: backupFace.done
             label: "Saved to"
-            value: "~/" + service.backupDone
+            value: State.tildePath(service.backupDone, service.home)
           }
 
           Text {
@@ -2086,7 +2090,7 @@ Panel {
             }
             InfoPair {
               label: "Backups"
-              value: "~/.windows.bak-*"
+              value: "*.bak-<date>, beside the VM's folder"
               dimValue: true
             }
             InfoPair {

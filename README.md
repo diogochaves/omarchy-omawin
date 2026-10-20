@@ -108,8 +108,9 @@ Windows) and **Login…**.
   rule that lets Start, Stop, Pause and Resume run without a dialog, for you
   only. It opens a terminal, shows you the rule and asks before writing it.
 - **Back up VM…** (in Settings, VM off) copies Windows' disk and login into
-  `~/.windows.bak-<date>`, next to the original: instant on btrfs, a full
-  copy elsewhere, with progress and Cancel. Restoring is by hand: see
+  a folder next to the original, `~/.windows.bak-<date>` (or beside the
+  folder `~/.windows` points to, if you moved it to another drive): instant
+  on btrfs, a full copy elsewhere, with progress and Cancel. Restoring is by hand: see
   [Restoring a backed-up VM](#restoring-a-backed-up-vm).
 - **Remove VM…** (in Settings, VM off) deletes Windows and everything in it,
   for a fresh start or a smaller disk. It lists what goes and what stays, and
@@ -128,10 +129,12 @@ and `consoleState` properties.
 
 A backup is two things: the `~/.windows` folder (the disk) and
 `~/.config/windows/credentials` (the login Connect uses). **Settings › Back
-up VM…** copies both, with the VM off, into `~/.windows.bak-<date>`: its
-`windows` folder is the disk, its `credentials` file the login. It is on the
-same drive, so copy that folder somewhere else to survive a reinstall or a
-dead drive. To restore, with the VM off (or after reinstalling Omarchy):
+up VM…** copies both, with the VM off, into `~/.windows.bak-<date>`, or,
+when `~/.windows` is a link to a folder on another drive, next to that folder
+(`/mnt/data/windows` → `/mnt/data/windows.bak-<date>`); the face shows where.
+Its `windows` folder is the disk, its `credentials` file the login. It is on
+the same drive as the VM, so copy that folder somewhere else to survive a
+reinstall or a dead drive. To restore, with the VM off (or after reinstalling Omarchy):
 
 1. Put the backup's `windows` folder back as `~/.windows` (move the current
    one aside first if there is one). Copy it into a fresh folder with
@@ -142,6 +145,9 @@ dead drive. To restore, with the VM off (or after reinstalling Omarchy):
    mkdir ~/.windows && chattr +C ~/.windows
    cp -a --reflink=auto ~/.windows.bak-<date>/windows/. ~/.windows/
    ```
+
+   For a backup beside a folder on another drive, put it back there, and
+   point `~/.windows` at it again (`ln -s /mnt/data/windows ~/.windows`).
 
    Moving the folder back (`mv`) works too, if you don't need to keep the
    backup.

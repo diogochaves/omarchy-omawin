@@ -1,28 +1,41 @@
 #!/bin/bash
 # Copies the stopped Windows VM aside, for chaves.omawin's Back up VM… face.
 #
-#   helpers/backup.sh plan   ONE line of key=value pairs, every key present:
-#                            ok=1 reflink=1 used=24696061952 free=1616073883648
-#                            target=.windows.bak-2026-10-04 last=1790812800
+#   helpers/backup.sh plan   ONE line of key=value pairs, every key present,
+#                            `where` last (a path may hold spaces):
+#                            ok=1 reflink=1 same=1 used=24696061952
+#                            free=1616073883648 target=windows.bak-2026-10-04
+#                            last=1790812800 where=/mnt/data
 #   helpers/backup.sh run    makes that copy: `copied=<bytes>` lines while it
-#                            runs, then `done=<name>`; SIGTERM cancels it
+#                            runs, then `done=<full path>`; SIGTERM cancels it
 #
 #   ok       there is room for the copy (1/0)
-#   reflink  ~/.windows and $HOME are on one btrfs or XFS filesystem, so the
-#            copy shares its blocks and is near instant (1/0); see "+C" below
+#   reflink  the VM's folder and `where` are on one btrfs or XFS filesystem,
+#            so the copy shares its blocks and is near instant (1/0); see "+C"
+#   same     `where` is on the same filesystem as the VM's folder (1/0): the
+#            copy undoes a bad Tune, update or Remove, but dies with that drive
 #   used     bytes ~/.windows occupies on disk (data.img is sparse: this is
 #            what Windows has written, not its size)
 #   free     bytes free where the copy goes
-#   target   the folder `run` would make in $HOME
+#   target   the folder `run` would make in `where`
 #   last     mtime, epoch seconds, of the newest earlier backup, or empty
+#   where    the folder the backup goes in (see "Where" below)
+#
+# Where: beside the VM's real folder, so on its filesystem and a reflink copy
+# wherever it allows one. ~/.windows is usually that folder, and the backup is
+# ~/.windows.bak-<date>; Omarchy allows ~/.windows to be a symlink, often to a
+# bigger drive, and then it goes beside where it points (/mnt/data/windows ->
+# /mnt/data/windows.bak-<date>). A folder there that isn't writable, or a name
+# that isn't plain, falls back to $HOME and .windows.bak-<date>, and `same`
+# says whether that is another drive. `last` counts backups in both places.
 #
 # Exit status 3, from either: nothing to back up yet. A VM counts as installed
 # once its compose file and login exist, but dockur makes data.img only on
 # Windows' first start, so a VM that never started has no disk to copy. Any
 # other failure is status 2, with the reason on stderr.
 #
-# A backup is a folder next to the original, ~/.windows.bak-<date> (-2, -3…
-# for a second one that day), holding
+# A backup is a folder next to the original, <name>.bak-<date> (-2, -3… for a
+# second one that day), holding
 #
 #   windows/      a copy of everything in ~/.windows, data.img included
 #   credentials   a copy of ~/.config/windows/credentials (0600), if there is one
@@ -55,7 +68,7 @@
 # Environment (all optional, the defaults are the real system):
 #   WINDOWS_DIR       the VM's storage      (default ~/.windows)
 #   CREDENTIALS_FILE  the login             (default ~/.config/windows/credentials)
-#   BACKUP_ROOT       where backups go      (default $HOME)
+#   BACKUP_ROOT       where backups go      (default: see "Where" above)
 #   TODAY             the date in the name  (default today, YYYY-MM-DD)
 #   FREE_BYTES, REFLINK  override the two readings, for the tests
 #   NOCOW, NOCOW_SET     override whether data.img is +C and whether the
@@ -66,7 +79,8 @@ export LC_ALL=C
 
 windows=${WINDOWS_DIR:-$HOME/.windows}
 credentials=${CREDENTIALS_FILE:-$HOME/.config/windows/credentials}
-root=${BACKUP_ROOT:-$HOME}
+root=
+base=.windows
 today=${TODAY:-$(/usr/bin/date +%F)}
 spare=$((1024 * 1024 * 1024))
 
@@ -136,21 +150,41 @@ reflinks() {
   (($? != 2))
 }
 
-# The first free name for today: .windows.bak-<date>, then -2, -3…
+# Where the backup goes, and its name's stem: beside the VM's real folder when
+# that is writable and plainly named, else $HOME as .windows.
+choose_root() {
+  if [[ -n ${BACKUP_ROOT-} ]]; then
+    root=$BACKUP_ROOT
+    return
+  fi
+  root=$HOME
+  base=.windows
+  local real parent name
+  real=$(/usr/bin/realpath -e -- "$windows" 2>/dev/null) || return 0
+  parent=${real%/*}
+  name=${real##*/}
+  [[ -n $parent && $parent != *$'\n'* && -d $parent && -w $parent ]] || return 0
+  [[ $name =~ ^\.?[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$ ]] || return 0
+  root=$parent
+  base=$name
+}
+
+# The first free name for today: <base>.bak-<date>, then -2, -3…
 target_name() {
-  local name=.windows.bak-$today n=2
+  local name=$base.bak-$today n=2
   while [[ -e $root/$name || -e $root/$name.partial ]]; do
-    name=.windows.bak-$today-$n
+    name=$base.bak-$today-$n
     ((n++))
     ((n < 100)) || return 1
   done
   printf '%s' "$name"
 }
 
-# The newest finished backup's mtime, or nothing.
+# The newest finished backup's mtime, here or in $HOME (where earlier
+# versions put them all), or nothing.
 last_backup() {
   local newest=0 dir when
-  for dir in "$root"/.windows.bak-*; do
+  for dir in "$root/$base".bak-* "$HOME"/.windows.bak-*; do
     [[ -d $dir && $dir != *.partial ]] || continue
     when=$(/usr/bin/stat -c %Y -- "$dir" 2>/dev/null) || continue
     ((when > newest)) && newest=$when
@@ -158,9 +192,18 @@ last_backup() {
   ((newest > 0)) && printf '%s' "$newest"
 }
 
+# The copy and the VM's folder on one filesystem.
+same_drive() {
+  local src dst
+  src=$(/usr/bin/stat -c %d -- "$windows/." 2>/dev/null) || return 1
+  dst=$(/usr/bin/stat -c %d -- "$root/." 2>/dev/null) || return 1
+  [[ $src == "$dst" ]]
+}
+
 plan() {
   [[ -d $windows && -f $windows/data.img ]] ||
     nothing_yet "nothing to back up yet: $windows has no data.img until Windows first starts"
+  choose_root
   # "/." so a ~/.windows that is a symlink (Omarchy allows one) is measured
   # where it points, as the copy reads it.
   used=$(occupied "$windows/.") || die "cannot read the size of $windows"
@@ -170,6 +213,8 @@ plan() {
   source_nocow && nocow=1
   reflink=0
   reflinks && reflink=1
+  same=0
+  same_drive && same=1
   need=$spare
   ((reflink)) || need=$((used + spare))
   ok=0
@@ -179,8 +224,8 @@ plan() {
 
 print_plan() {
   plan
-  printf 'ok=%s reflink=%s used=%s free=%s target=%s last=%s\n' \
-    "$ok" "$reflink" "$used" "$free" "$target" "$(last_backup)"
+  printf 'ok=%s reflink=%s same=%s used=%s free=%s target=%s last=%s where=%s\n' \
+    "$ok" "$reflink" "$same" "$used" "$free" "$target" "$(last_backup)" "$root"
 }
 
 copy_pid=
@@ -251,7 +296,7 @@ run() {
   }
   partial=
   trap - TERM INT HUP
-  printf 'done=%s\n' "$target"
+  printf 'done=%s\n' "$root/$target"
 }
 
 case ${1-} in

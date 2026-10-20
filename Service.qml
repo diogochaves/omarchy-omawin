@@ -1177,7 +1177,8 @@ QtObject {
 
   // ----------------------------------------------------------- the backup
   // Back up VM…: helpers/backup.sh copies ~/.windows and the credentials file
-  // into ~/.windows.bak-<date>, as the user, VM off. `plan` is read when the
+  // into <name>.bak-<date> beside the VM's real folder (or $HOME), as the
+  // user, VM off. `plan` is read when the
   // face or Settings opens; `run` streams `copied=` lines and ends on `done=`.
   // Cancel stops the process, and the helper removes its half-made copy.
 
@@ -1188,7 +1189,7 @@ QtObject {
   property bool backupNothingYet: false
   property string backupPlanError: ""
   property double backupCopied: 0
-  property string backupDone: ""
+  property string backupDone: ""      // the finished backup's full path
   property string backupError: ""
   property bool backupCancelled: false
 
@@ -1240,11 +1241,11 @@ QtObject {
     environment: ({ LC_ALL: "C" })
     stdout: SplitParser {
       onRead: function (data) {
-        var line = root.plain(String(data), 200)
+        var line = root.plain(String(data), 4096)
         var copied = /^copied=([0-9]{1,19})$/.exec(line)
         if (copied) root.backupCopied = Number(copied[1])
-        var done = /^done=(\.windows\.bak-[0-9-]{10,13})$/.exec(line)
-        if (done) root.backupDone = done[1]
+        var done = State.parseBackupDone(line)
+        if (done !== "") root.backupDone = done
       }
     }
     stderr: StdioCollector { id: backupErr; waitForEnd: true }
@@ -1262,7 +1263,7 @@ QtObject {
   }
 
   property Process backupOpenProc: Process {
-    command: ["/usr/bin/xdg-open", root.home + "/" + root.backupDone]
+    command: ["/usr/bin/xdg-open", root.backupDone]
   }
 
   // ------------------------------------------------------ the key binding

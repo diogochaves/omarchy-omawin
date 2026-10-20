@@ -5,6 +5,15 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Changed
+
+- **Back up VM… keeps the copy next to Windows' disk.** If you moved
+  `~/.windows` to another drive, the backup now goes beside it there
+  (`/mnt/data/windows.bak-<date>`), where it's instant on btrfs and takes no
+  room on your home drive. It used to be a full copy into your home folder.
+  The face shows where it goes, and when it can't go there, says it's on
+  another drive. Backups you already made stay where they are.
+
 ## 0.3.2 — 2026-10-20
 
 ### Fixed
