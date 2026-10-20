@@ -5,6 +5,8 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+## 0.3.1 — 2026-10-20
+
 ### Fixed
 
 - **The card has its colours again on Qt 6.12.** Qt 6.12 added its own `Color`
