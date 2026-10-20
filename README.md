@@ -26,6 +26,8 @@ same one the launcher entry runs.
 omarchy plugin add https://github.com/diogochaves/omarchy-omawin --enable
 ```
 
+Or from its page in the
+[Omarchy plugin directory](https://plugins.omarchy.org/plugin.html?id=chaves.omawin).
 The Windows glyph appears in the bar. To place it:
 
 ```sh
