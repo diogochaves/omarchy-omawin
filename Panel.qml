@@ -172,6 +172,7 @@ Panel {
   readonly property string shieldGlyph: ""
   readonly property string checkGlyph: ""
   readonly property string backGlyph: ""
+  readonly property string restoreGlyph: ""   // a clock turning back
   readonly property string closeGlyph: ""
   readonly property string minusGlyph: ""
   readonly property string trashGlyph: ""
@@ -2198,7 +2199,7 @@ Panel {
             }
             ActionButton {
               width: restoreRow.cellWidth
-              iconText: root.backGlyph
+              iconText: root.restoreGlyph
               text: "Restore"
               foreground: root.urgentColor
               allowed: root.restoreAck && !!root.restoreEntry && root.can("start") && !service.busy
@@ -2619,7 +2620,7 @@ Panel {
         cells: 3
         ActionButton {
           width: backupActions.cellWidth
-          iconText: root.backGlyph
+          iconText: root.restoreGlyph
           text: "Restore…"
           tooltipText: root.stoppedFace ? "" : "Stop the VM first"
           allowed: root.stoppedFace && !service.busy
