@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "lib/State.js" as State
 
@@ -43,9 +44,9 @@ Panel {
   }
 
   // ------------------------------------------------------------ the palette
-  readonly property color fg: bar ? bar.foreground : Color.foreground
+  readonly property color fg: bar ? bar.foreground : Commons.Color.foreground
   readonly property color dim: Qt.darker(root.fg, 1.4)
-  readonly property color urgentColor: bar ? bar.urgent : Color.urgent
+  readonly property color urgentColor: bar ? bar.urgent : Commons.Color.urgent
   // A caution that is not an error ("more than half this machine"): the
   // theme's own yellow. The shell hands plugins no such role, but every
   // Omarchy theme's colors.toml has `yellow`, so it is read from there, and
@@ -54,7 +55,7 @@ Panel {
   readonly property color warnColor: root.themeYellow !== "" ? root.themeYellow : root.urgentColor
 
   property FileView themeColors: FileView {
-    path: Color.currentThemePath + "/colors.toml"
+    path: Commons.Color.currentThemePath + "/colors.toml"
     watchChanges: false
     printErrors: false
     onLoaded: root.themeYellow = State.themeYellow(text())
@@ -64,7 +65,7 @@ Panel {
   // A theme switch is pushed to Color over the shell's IPC, not through the
   // file, so its colours changing is the signal to read the file again.
   Connections {
-    target: Color
+    target: Commons.Color
     function onAccentChanged() { root.themeColors.reload() }
     function onUrgentChanged() { root.themeColors.reload() }
     function onForegroundChanged() { root.themeColors.reload() }
@@ -551,8 +552,8 @@ Panel {
     // that colour, hand it the theme's own and the themed spec (gradients,
     // per-edge widths, alpha) comes back untouched.
     borderSpec: Border.localOrSurfaceSpec("popups", "border",
-      root.failed ? root.urgentColor : Color.popups.border,
-      Color.popups.border, Math.max(1, Style.space(2)))
+      root.failed ? root.urgentColor : Commons.Color.popups.border,
+      Commons.Color.popups.border, Math.max(1, Style.space(2)))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -621,7 +622,7 @@ Panel {
                 implicitWidth: pillLabel.implicitWidth + Style.space(10)
                 implicitHeight: pillLabel.implicitHeight + Style.space(4)
                 color: "transparent"
-                borderSpec: Border.controlSpec("normal", hero.foreground, Color.accent)
+                borderSpec: Border.controlSpec("normal", hero.foreground, Commons.Color.accent)
                 radius: Style.cornerRadius
 
                 Text {
@@ -702,7 +703,7 @@ Panel {
             height: progressTrack.height
             radius: progressTrack.radius
             width: progressTrack.width * 0.38
-            color: root.vmState === "stopping" ? root.dim : Color.accent
+            color: root.vmState === "stopping" ? root.dim : Commons.Color.accent
 
             // Stepped, not tweened: a per-frame tween repainted the popup at
             // the monitor's refresh rate for as long as a start or a first
@@ -955,7 +956,7 @@ Panel {
         BannerBox {
           visible: service.noticeText !== "" && root.face !== "settings" && root.face !== "remove"
           text: service.noticeText
-          accentColor: service.noticeOk ? Color.accent : root.urgentColor
+          accentColor: service.noticeOk ? Commons.Color.accent : root.urgentColor
         }
 
         // Before Start: the RAM it would start with does not fit in what is
@@ -971,7 +972,7 @@ Panel {
         BannerBox {
           visible: service.grewNote !== "" && root.live
           text: service.grewNote
-          accentColor: Color.accent
+          accentColor: Commons.Color.accent
           dismissible: true
           onDismissed: service.dismissGrew()
         }
@@ -1946,7 +1947,7 @@ Panel {
 
             Rectangle {
               height: parent.height
-              color: Color.accent
+              color: Commons.Color.accent
               width: parent.width * Math.min(1, backupFace.plan && backupFace.plan.used > 0
                 ? service.backupCopied / backupFace.plan.used : 0)
             }

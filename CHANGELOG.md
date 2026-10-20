@@ -7,6 +7,9 @@ chaves.omawin` brings you the latest.
 
 ### Fixed
 
+- **The card has its colours again on Qt 6.12.** Qt 6.12 added its own `Color`
+  type, which hid the shell's palette, so text and accents came out undefined.
+
 - **The bar's Windows mark keeps its size while the VM is paused.** On newer
   Omarchy, which fits every bar icon to one size, the pause badge used to
   shrink the mark and move it up-left until you resumed.
