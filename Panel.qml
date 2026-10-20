@@ -4,6 +4,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "lib/State.js" as State
+import "lib/IpcOwner.js" as IpcOwner
 
 // The bar glyph and the popup card of chaves.omawin, and nothing else: every
 // decision here is a read of `service.state` or `service.actions`, every
@@ -488,9 +489,32 @@ Panel {
   }
 
   // ----------------------------------------------------------------- the IPC
+  // One handler answers for every instance (each monitor's bar builds one):
+  // lib/IpcOwner.js hands the target to the first live instance, and to the
+  // next when that one goes, so the key binding survives a monitor being
+  // unplugged.
+  property bool ipcOwner: false
+
+  function ipcElected(first) {
+    if (!first) {
+      root.ipcOwner = false
+      return
+    }
+    // After the leaving instance's handler is gone, or Quickshell ignores
+    // this one for good.
+    Qt.callLater(function () { if (IpcOwner.first() === root) root.ipcOwner = true })
+  }
+
+  Component.onCompleted: IpcOwner.join(root)
+  Component.onDestruction: {
+    ipc.enabled = false
+    IpcOwner.leave(root)
+  }
 
   IpcHandler {
+    id: ipc
     target: "chaves.omawin"
+    enabled: root.ipcOwner
 
     function open(): void { root.open() }
     function close(): void { root.close() }

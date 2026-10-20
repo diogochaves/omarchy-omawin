@@ -5,6 +5,14 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Fixed
+
+- **One bar answers the key binding, and another takes over.** With several
+  monitors, every bar's card tried to answer `omarchy-shell chaves.omawin`,
+  only the first could, and the journal logged a warning for each of the
+  others. They now take turns, so if that monitor's bar goes away, the next
+  one answers.
+
 ### Added
 
 - **Clean shutdown.** Omarchy gives every service 5 seconds to stop when you
