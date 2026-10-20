@@ -104,9 +104,11 @@ Windows) and **Login…**.
   copied password stays out of Omarchy's clipboard history and is cleared
   after 30 s. Changed the password inside Windows, or want to log in as
   another account? **Update login…** so Connect keeps working.
-- **Settings** (the gear) turns **Passwordless actions** on or off: a polkit
-  rule that lets Start, Stop, Pause and Resume run without a dialog, for you
-  only. It opens a terminal, shows you the rule and asks before writing it.
+- **Settings** (the gear) is a list: Tune, Login, Back up, Passwordless
+  actions, Key binding and Remove VM…, each with its current value and a
+  line on what it does. **Passwordless actions** is a polkit rule that lets
+  Start, Stop, Pause and Resume run without a dialog, for you only. It opens
+  a terminal, shows you the rule and asks before writing it.
 - **Back up VM…** (in Settings, VM off) copies Windows' disk and login into
   a folder next to the original, `~/.windows.bak-<date>` (or beside the
   folder `~/.windows` points to, if you moved it to another drive): instant

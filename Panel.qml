@@ -301,12 +301,16 @@ Panel {
   property bool showRule: false
   property bool keySetupOpen: false
 
-  // Where Back leads from Back up VM: Settings, Remove or Tune.
+  // Where Back leads from Back up VM: Settings, Remove or Tune. Tune and
+  // Login go back to Settings when opened from it, to the card otherwise.
   property string backupFrom: "settings"
+  property string tuneFrom: "live"
+  property string loginFrom: "live"
   property bool removeAck: false
 
-  // One step back: Update password to Login, Remove to wherever it was opened
-  // from, every other sub-face to the card. On the card itself it closes it.
+  // One step back: Update password to Login, Passwordless and Key binding to
+  // Settings, the faces Settings shares with the card to wherever they were
+  // opened from. On the card itself it closes it.
   // Back and Esc hold only while this face's own write is in flight: leaving
   // Update password mid-save would drop the typed password and land the
   // helper's answer on another face. Anything else that runs (a stop, a
@@ -324,6 +328,9 @@ Panel {
     else if (root.face === "updatePassword") root.openFace("login")
     else if (root.face === "remove") root.openFace(root.removeFrom)
     else if (root.face === "backup") root.openFace(root.backupFrom)
+    else if (root.face === "rule" || root.face === "key") root.openFace("settings")
+    else if (root.face === "tune") root.openFace(root.tuneFrom)
+    else if (root.face === "login") root.openFace(root.loginFrom)
     else root.openFace("live")
   }
 
@@ -348,19 +355,26 @@ Panel {
       && (name === "tune" || name === "updatePassword" || name === "remove" || name === "backup"))
       name = "live"
     if (name === "tune") {
+      if (root.face !== "tune") root.tuneFrom = root.face === "settings" ? "settings" : "live"
       service.clearNotice()
       service.readLimits()
       root.resetTune()
     }
     if (name === "settings") {
-      if (root.face !== "settings") {
-        root.showRule = false
-        root.keySetupOpen = false
-      }
       service.readRule()
       service.readKey()
       service.readBackupPlan()
     }
+    if (name === "rule") {
+      if (root.face !== "rule") root.showRule = false
+      service.readRule()
+    }
+    if (name === "key") {
+      if (root.face !== "key") root.keySetupOpen = false
+      service.readKey()
+    }
+    if (name === "login" && root.face !== "login" && root.face !== "updatePassword")
+      root.loginFrom = root.face === "settings" ? "settings" : "live"
     if (name === "remove") {
       root.removeFrom = root.face === "tune" ? "tune" : "settings"
       root.removeAck = false
@@ -476,13 +490,14 @@ Panel {
       return service.state + " " + service.failedMessage
     }
     // Debug only: show one of the card's faces — live, tune, login,
-    // updatePassword, settings or remove — without pressing through to it, the way
+    // updatePassword, settings, rule, key, remove or backup — without
+    // pressing through to it, the way
     // `mock` reaches every state. It goes through the same openFace() the
     // buttons use, so the face is seeded the way a press would seed it; the
     // faces that only exist for a stopped VM open only on one, and nothing
     // runs. Anything else means "live".
     function face(name: string): string {
-      var faces = ["live", "tune", "login", "updatePassword", "settings", "remove", "backup"]
+      var faces = ["live", "tune", "login", "updatePassword", "settings", "rule", "key", "remove", "backup"]
       root.openFace(faces.indexOf(String(name)) >= 0 ? String(name) : "live")
       return root.face
     }
@@ -592,10 +607,13 @@ Panel {
             : root.face === "updatePassword" ? "Update login"
             : root.face === "remove" ? "Remove VM"
             : root.face === "backup" ? "Back up VM"
+            : root.face === "rule" ? "Passwordless actions"
+            : root.face === "key" ? "Key binding"
             : "Settings"
           meta: root.live ? service.label
             : root.face === "login" ? "Windows VM · RDP and web viewer"
             : root.face === "settings" ? "Windows VM · Omawin " + root.pluginVersion
+            : root.face === "rule" || root.face === "key" ? "Windows VM · this desktop"
             : "Windows VM · " + service.label.toLowerCase()
           foreground: root.failed && root.live ? root.urgentColor : root.fg
           fontFamily: root.family
@@ -823,7 +841,7 @@ Panel {
                 anchors.fill: parent
                 enabled: service.keyText === ""
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                onClicked: root.openFace("settings")
+                onClicked: root.openFace("key")
               }
             }
 
@@ -1515,6 +1533,101 @@ Panel {
         }
 
         // =========================== Settings ==============================
+        // A list of rows, one per thing to look at or change: each says its
+        // current value and what it does in one line, and opens its own face,
+        // where the longer text sits above the button that acts. Only
+        // Passwordless and Key binding live here alone; Tune, Login, Back up
+        // and Remove are also reached from elsewhere.
+        Column {
+          visible: root.face === "settings"
+          width: parent.width
+          spacing: Style.space(6)
+
+          PanelSectionHeader {
+            visible: root.vmState !== "not-installed"
+            text: "VM"
+            foreground: root.fg
+            fontFamily: root.family
+          }
+
+          SettingsRow {
+            visible: root.vmState !== "not-installed"
+            title: "Tune"
+            value: service.detail
+            tip: root.stoppedFace ? "Cores, RAM and disk for the next start." : "Stop the VM to change its cores, RAM or disk."
+            allowed: root.can("tune")
+            onActivated: root.openFace("tune")
+          }
+
+          SettingsRow {
+            visible: root.vmState !== "not-installed"
+            title: "Login"
+            value: service.loginText
+            tip: "The account Connect signs in with. Show, copy or change it."
+            allowed: service.loginText !== "—"
+            onActivated: root.openFace("login")
+          }
+
+          SettingsRow {
+            visible: root.vmState !== "not-installed"
+            title: "Back up"
+            value: service.backupProc.running
+              ? "copying · " + State.gbText(service.backupCopied)
+              : service.backupPlan && service.backupPlan.last > 0
+                ? "last: " + State.dateText(service.backupPlan.last * 1000) : ""
+            tip: root.stoppedFace
+              ? "Copies Windows' disk and login next to the original, so a Tune, update or Remove can be undone."
+              : "Stop the VM to back it up: a copy of a disk Windows is writing to would be torn."
+            allowed: (root.can("backup") || service.backupProc.running) && root.stoppedFace
+            onActivated: root.openFace("backup")
+          }
+
+          PanelSectionHeader {
+            text: "DESKTOP"
+            foreground: root.fg
+            fontFamily: root.family
+          }
+
+          SettingsRow {
+            title: "Passwordless actions"
+            value: service.rulePresent ? "on" : "off"
+            tip: service.rulePresent
+              ? "Start, Stop, Pause and Resume run without a dialog."
+              : "Start, Stop, Pause and Resume without the dialog. Installing it opens a terminal."
+            allowed: true
+            onActivated: root.openFace("rule")
+          }
+
+          SettingsRow {
+            title: "Key binding"
+            value: service.keyText !== "" ? service.keyText.replace(/ \+ /g, " ") : "not set"
+            tip: "One key to start Windows, or connect when it's running."
+            allowed: true
+            onActivated: root.openFace("key")
+          }
+
+          // The way to Remove: last on the rarest face, three deliberate steps
+          // from the card (the gear, this row, the switch on the face it
+          // opens), and never beside Start. Only for a VM that exists.
+          PanelSeparator {
+            visible: root.vmState !== "not-installed"
+            foreground: root.fg
+          }
+
+          SettingsRow {
+            visible: root.vmState !== "not-installed"
+            title: "Remove VM…"
+            danger: true
+            value: service.currentDisk !== "" ? service.currentDisk + " disk" : ""
+            tip: root.stoppedFace
+              ? "Deletes Windows and everything in it. The Shared folder and backups stay. Install… starts a fresh one."
+              : "Stop the VM to remove it. To back up first, Connect and copy your files to the Shared folder."
+            allowed: root.can("remove")
+            onActivated: root.openFace("remove")
+          }
+        }
+
+        // ====================== Passwordless actions =======================
         // The one opt-in: a polkit rule that makes Start, Stop, Pause and
         // Resume promptless for this user. It needs root, so the work happens
         // in Omarchy's floating terminal running this plugin's own `setup`,
@@ -1522,7 +1635,7 @@ Panel {
         // is a picture of the user-owned copy setup leaves behind — the rules
         // directory itself cannot be read from here at all.
         Column {
-          visible: root.face === "settings"
+          visible: root.face === "rule"
           width: parent.width
           spacing: Style.space(14)
 
@@ -1644,16 +1757,22 @@ Panel {
             }
           }
 
-          // The key for `primary`: shown when bindings.lua has one, offered as
-          // a line to paste when it does not. Omawin never writes the file.
-          PanelSeparator { foreground: root.fg }
+        }
+
+        // =========================== Key binding ===========================
+        // The key for `primary`: shown when bindings.lua has one, offered as
+        // a line to paste when it does not. Omawin never writes the file.
+        Column {
+          visible: root.face === "key"
+          width: parent.width
+          spacing: Style.space(14)
 
           Column {
             width: parent.width
             spacing: Style.spacing.labelGap
 
             FieldHeader {
-              label: "Key binding"
+              label: "Your key"
               hint: service.keyText !== "" ? "from bindings.lua" : "not set"
             }
 
@@ -1733,96 +1852,6 @@ Panel {
             }
           }
 
-          // Back up sits right above Remove, which asks for one. Only for a VM
-          // that exists; the button only while it is off.
-          PanelSeparator {
-            visible: root.vmState !== "not-installed"
-            foreground: root.fg
-          }
-
-          Column {
-            visible: root.vmState !== "not-installed"
-            width: parent.width
-            spacing: Style.spacing.labelGap
-
-            FieldHeader {
-              label: "Back up the VM"
-              hint: service.backupProc.running
-                ? "copying · " + State.gbText(service.backupCopied)
-                : service.backupPlan && service.backupPlan.last > 0
-                  ? "last: " + State.dateText(service.backupPlan.last * 1000) : ""
-            }
-
-            Text {
-              width: parent.width
-              textFormat: Text.PlainText
-              wrapMode: Text.WordWrap
-              color: root.dim
-              font.family: root.family
-              font.pixelSize: Style.font.caption
-              text: root.stoppedFace
-                ? "Copies Windows' disk and login next to the original, so a Tune, update or Remove can be undone."
-                : "Stop the VM to back it up: a copy of a disk Windows is writing to would be torn."
-            }
-          }
-
-          ActionRow {
-            id: backupSettingsRow
-            visible: root.vmState !== "not-installed"
-            cells: 1
-            ActionButton {
-              width: backupSettingsRow.cellWidth
-              iconText: root.copyGlyph
-              text: "Back up VM…"
-              allowed: (root.can("backup") || service.backupProc.running) && root.stoppedFace
-              onClicked: root.openFace("backup")
-            }
-          }
-
-          // The way to Remove: last on the rarest face, three deliberate steps
-          // from the card (the gear, this button, the switch on the face it
-          // opens), and never beside Start. Only for a VM that exists.
-          PanelSeparator {
-            visible: root.vmState !== "not-installed"
-            foreground: root.fg
-          }
-
-          Column {
-            visible: root.vmState !== "not-installed"
-            width: parent.width
-            spacing: Style.spacing.labelGap
-
-            FieldHeader {
-              label: "Remove the VM"
-              hint: service.currentDisk !== "" ? service.currentDisk + " disk" : ""
-            }
-
-            Text {
-              width: parent.width
-              textFormat: Text.PlainText
-              wrapMode: Text.WordWrap
-              color: root.dim
-              font.family: root.family
-              font.pixelSize: Style.font.caption
-              text: root.stoppedFace
-                ? "Deletes Windows and everything in it. The Shared folder stays. Install… starts a fresh one."
-                : "Stop the VM to remove it. To back up first, Connect and copy your files to the Shared folder."
-            }
-          }
-
-          ActionRow {
-            id: removeEntryRow
-            visible: root.vmState !== "not-installed"
-            cells: 1
-            ActionButton {
-              width: removeEntryRow.cellWidth
-              iconText: root.trashGlyph
-              text: "Remove VM…"
-              foreground: root.urgentColor
-              allowed: root.can("remove")
-              onClicked: root.openFace("remove")
-            }
-          }
         }
 
         // =========================== Back up VM ============================
@@ -2187,6 +2216,85 @@ Panel {
     text: "Login…"
     allowed: service.loginText !== "—"
     onClicked: root.openFace("login")
+  }
+
+  // One line of Settings: what it is, its current value and a ›, and below
+  // them the one-line tip that says what opening it does. The whole row is
+  // the button; its hover wash reaches a little past the text on both sides,
+  // so the text stays on the card's left edge like every other face's.
+  component SettingsRow: Item {
+    id: settingsRow
+    property string title: ""
+    property string value: ""
+    property string tip: ""
+    property bool allowed: true
+    property bool danger: false
+    signal activated()
+
+    width: parent.width
+    implicitHeight: rowText.implicitHeight + Style.space(10)
+    opacity: allowed ? 1.0 : 0.45
+
+    Rectangle {
+      anchors.fill: parent
+      anchors.leftMargin: -Style.space(6)
+      anchors.rightMargin: -Style.space(6)
+      radius: Style.cornerRadius
+      color: rowArea.containsMouse && settingsRow.allowed
+        ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.07) : "transparent"
+    }
+
+    Column {
+      id: rowText
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(2)
+
+      Item {
+        width: parent.width
+        implicitHeight: Math.max(rowTitle.implicitHeight, rowValue.implicitHeight)
+
+        InfoValue {
+          id: rowTitle
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+          text: settingsRow.title
+          color: settingsRow.danger ? root.urgentColor : root.fg
+        }
+
+        InfoLabel {
+          id: rowValue
+          anchors.left: rowTitle.right
+          anchors.leftMargin: Style.space(10)
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          horizontalAlignment: Text.AlignRight
+          elide: Text.ElideLeft
+          opacity: 0.8
+          text: (settingsRow.value !== "" ? settingsRow.value + "  " : "") + "›"
+        }
+      }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        color: root.dim
+        font.family: root.family
+        font.pixelSize: Style.font.caption
+        text: settingsRow.tip
+      }
+    }
+
+    MouseArea {
+      id: rowArea
+      anchors.fill: parent
+      hoverEnabled: true
+      enabled: settingsRow.allowed
+      cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+      onClicked: settingsRow.activated()
+    }
   }
 
   // A row of equal-width buttons, the Display panel's scale-pill geometry.

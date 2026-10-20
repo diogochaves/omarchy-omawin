@@ -12,6 +12,11 @@ chaves.omawin` brings you the latest.
   The header lost the cores · RAM · disk pill, which the rows below already
   say, and Settings shows Omawin's version in its title line.
 
+- **Settings is a short list.** Tune, Login, Back up, Passwordless actions,
+  Key binding and Remove VM… are one row each, with its current value and a
+  line on what it does; each opens its own face, and Back returns to
+  Settings. It used to be one long page of four sections.
+
 ## 0.3.3 — 2026-10-20
 
 ### Changed
