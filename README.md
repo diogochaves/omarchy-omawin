@@ -133,8 +133,18 @@ up VM…** copies both, with the VM off, into `~/.windows.bak-<date>`: its
 same drive, so copy that folder somewhere else to survive a reinstall or a
 dead drive. To restore, with the VM off (or after reinstalling Omarchy):
 
-1. Copy the backup's `windows` folder back as `~/.windows` (move the current
-   one aside first if there is one).
+1. Put the backup's `windows` folder back as `~/.windows` (move the current
+   one aside first if there is one). Copy it into a fresh folder with
+   copy-on-write off, as Windows' installer makes it, which on btrfs is
+   instant and keeps the backup:
+
+   ```bash
+   mkdir ~/.windows && chattr +C ~/.windows
+   cp -a --reflink=auto ~/.windows.bak-<date>/windows/. ~/.windows/
+   ```
+
+   Moving the folder back (`mv`) works too, if you don't need to keep the
+   backup.
 2. Press **Install…** on the card. For the username and password, enter the
    two lines of the backed-up credentials file. Pick a disk at least as big as
    the old one; cores and RAM are up to you, and Tune changes them later.

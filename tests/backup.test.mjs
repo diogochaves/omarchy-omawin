@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -11,8 +11,8 @@ import { helper, root } from './helpers.mjs'
 // FREE_BYTES and REFLINK stand in for df and the filesystem type.
 const MIB = 1024 * 1024
 
-function box(t, { written = 1, credentials = true } = {}) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'omawin-backup-'))
+function box(t, { written = 1, credentials = true, under = os.tmpdir() } = {}) {
+  const home = fs.mkdtempSync(path.join(under, 'omawin-backup-'))
   t.after(() => fs.rmSync(home, { recursive: true, force: true }))
   const windows = path.join(home, '.windows')
   fs.mkdirSync(windows)
@@ -134,4 +134,60 @@ test('a cancelled copy leaves nothing behind', async t => {
   assert.notEqual(code, 0)
   assert.equal(out.includes('done='), false, 'the copy finished before the cancel landed')
   assert.deepEqual(fs.readdirSync(home).filter(n => n.startsWith('.windows.bak')), [])
+})
+
+// dockur's data.img is +C, and btrfs shares extents only between files that
+// agree on it, so a +C image copied into a plain folder is a full copy (#30).
+// A folder that refuses +C: the copy is a full one, so run checks the room
+// for one, even though plan counted on sharing.
+test('a +C image whose copy cannot be +C needs the room for a full copy', t => {
+  const { env, home } = box(t, { written: 2 })
+  const nocow = { ...env, REFLINK: '1', NOCOW: '1', NOCOW_SET: '0' }
+  const tight = { ...nocow, FREE_BYTES: String(1024 ** 3) }
+  assert.equal(fields(helper('backup.sh', ['plan'], tight).out).ok, '1')
+  const refused = helper('backup.sh', ['run'], tight)
+  assert.equal(refused.status, 2)
+  assert.match(refused.err, /not enough room: .* can't turn copy-on-write off/)
+  assert.deepEqual(fs.readdirSync(home).filter(n => n.startsWith('.windows.bak')), [])
+  // With the room, it makes the full copy.
+  const result = helper('backup.sh', ['run'], nocow)
+  assert.equal(result.status, 0, result.err)
+  assert.match(result.out, /\ndone=\.windows\.bak-2026-10-04$/)
+})
+
+// The real thing, where a btrfs folder is at hand (OMAWIN_TEST_BTRFS, or
+// ~/.cache when it is on btrfs, as on Omarchy): a +C image comes out +C, its
+// blocks shared with the original, and plan says so without the overrides.
+function btrfsDir() {
+  const candidates = [process.env.OMAWIN_TEST_BTRFS,
+    path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'))]
+  for (const dir of candidates) {
+    if (!dir) continue
+    const type = spawnSync('/usr/bin/stat', ['-f', '-c', '%T', dir], { encoding: 'utf8' })
+    if (type.status === 0 && type.stdout.trim() === 'btrfs') return dir
+  }
+  return null
+}
+
+test('on btrfs, a +C image is copied +C and shares its blocks', t => {
+  const under = btrfsDir()
+  if (!under) return t.skip('no btrfs folder (set OMAWIN_TEST_BTRFS)')
+  const lsattr = file => spawnSync('/usr/bin/lsattr', ['-d', file], { encoding: 'utf8' }).stdout.split(' ')[0]
+  const { env, home } = box(t, { written: 0, under })
+  // +C only takes on an empty file: remake data.img inside a +C folder.
+  const image = path.join(env.WINDOWS_DIR, 'data.img')
+  fs.rmSync(image)
+  assert.equal(spawnSync('/usr/bin/chattr', ['+C', env.WINDOWS_DIR]).status, 0)
+  fs.writeFileSync(image, Buffer.alloc(4 * MIB, 7))
+  fs.truncateSync(image, 64 * 1024 ** 3)
+  assert.match(lsattr(image), /C/)
+  const real = { ...env }
+  delete real.REFLINK
+  assert.equal(fields(helper('backup.sh', ['plan'], real).out).reflink, '1')
+  const result = helper('backup.sh', ['run'], real)
+  assert.equal(result.status, 0, result.err)
+  const copy = path.join(home, '.windows.bak-2026-10-04/windows/data.img')
+  assert.match(lsattr(copy), /C/)
+  const extents = spawnSync('/usr/bin/filefrag', ['-v', copy], { encoding: 'utf8' }).stdout
+  assert.match(extents, /shared/, 'the copy shares the original\'s blocks')
 })

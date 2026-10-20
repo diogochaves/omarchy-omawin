@@ -12,6 +12,13 @@ chaves.omawin` brings you the latest.
   stayed on "Reading the VM's size…". It now says so, and any other reason it
   can't read the VM shows on the face too.
 
+- **Back up VM… is instant on btrfs, as it says.** Windows' disk has
+  copy-on-write turned off, so the copy couldn't share its blocks: it was a
+  full copy that took as long as one, needed the disk's whole size free
+  while the room check asked for 1 GB, and came back with copy-on-write on.
+  The copy now matches the original, and the README's restore steps keep it
+  that way.
+
 ## 0.3.1 — 2026-10-20
 
 ### Fixed

@@ -9,7 +9,7 @@
 #
 #   ok       there is room for the copy (1/0)
 #   reflink  ~/.windows and $HOME are on one btrfs or XFS filesystem, so the
-#            copy shares its blocks and is near instant (1/0)
+#            copy shares its blocks and is near instant (1/0); see "+C" below
 #   used     bytes ~/.windows occupies on disk (data.img is sparse: this is
 #            what Windows has written, not its size)
 #   free     bytes free where the copy goes
@@ -39,6 +39,15 @@
 # cancelled or failed copy removes the partial folder: there is never a
 # half-backup that looks whole.
 #
+# +C: dockur makes data.img with `chattr +C` (no copy-on-write, no checksums),
+# and btrfs shares extents only between files that agree on it. A plain copy
+# of a +C image is quietly a full one, so when data.img is +C the empty
+# <target>.partial is made +C too: what cp creates in it inherits that, and
+# the copy shares its blocks (and keeps copy-on-write off, as the VM expects).
+# A folder that refuses +C means a full copy after all: `run` then checks the
+# room for one. On btrfs, an image whose flags can't be read is not counted
+# on to share.
+#
 # Room: a full copy needs `used` plus 1 GiB free, a reflink copy 1 GiB for the
 # metadata. It is the same drive as the original, which the card says: this
 # guards against a bad Tune, update or Remove, not a failed disk.
@@ -49,6 +58,8 @@
 #   BACKUP_ROOT       where backups go      (default $HOME)
 #   TODAY             the date in the name  (default today, YYYY-MM-DD)
 #   FREE_BYTES, REFLINK  override the two readings, for the tests
+#   NOCOW, NOCOW_SET     override whether data.img is +C and whether the
+#                        partial folder takes +C (1/0), for the tests
 
 set -uo pipefail
 export LC_ALL=C
@@ -87,7 +98,28 @@ free_bytes() {
   /usr/bin/df -B1 --output=avail -- "$root" 2>/dev/null | /usr/bin/tail -n 1 | /usr/bin/tr -d ' '
 }
 
-# Shared extents need one filesystem that has them, under both paths.
+# data.img's +C: 0 when it has it, 1 when not, 2 when its flags can't be read.
+source_nocow() {
+  if [[ -n ${NOCOW-} ]]; then
+    [[ $NOCOW == 1 ]]
+    return
+  fi
+  local flags
+  flags=$(/usr/bin/lsattr -d -- "$windows/data.img" 2>/dev/null) || return 2
+  [[ ${flags%% *} == *C* ]]
+}
+
+# +C on the empty folder the copy goes into, so what cp makes there has it.
+set_nocow() {
+  if [[ -n ${NOCOW_SET-} ]]; then
+    [[ $NOCOW_SET == 1 ]]
+    return
+  fi
+  /usr/bin/chattr +C -- "$1" 2>/dev/null
+}
+
+# Shared extents need one filesystem that has them, under both paths. On
+# btrfs they also need data.img's +C known, so the copy can match it.
 reflinks() {
   if [[ -n ${REFLINK-} ]]; then
     [[ $REFLINK == 1 ]]
@@ -98,7 +130,10 @@ reflinks() {
   [[ $type == btrfs || $type == xfs ]] || return 1
   src=$(/usr/bin/stat -c %d -- "$windows/." 2>/dev/null) || return 1
   dst=$(/usr/bin/stat -c %d -- "$root/." 2>/dev/null) || return 1
-  [[ $src == "$dst" ]]
+  [[ $src == "$dst" ]] || return 1
+  [[ $type == btrfs ]] || return 0
+  source_nocow
+  (($? != 2))
 }
 
 # The first free name for today: .windows.bak-<date>, then -2, -3…
@@ -131,6 +166,8 @@ plan() {
   used=$(occupied "$windows/.") || die "cannot read the size of $windows"
   free=$(free_bytes)
   [[ $free =~ ^[0-9]{1,19}$ ]] || die "cannot read the free space in $root"
+  nocow=0
+  source_nocow && nocow=1
   reflink=0
   reflinks && reflink=1
   need=$spare
@@ -168,6 +205,15 @@ run() {
   umask 077
   /usr/bin/mkdir -- "$partial" || die "cannot make $partial"
   umask "$old_umask"
+  # A folder that won't take +C can't share a +C image's blocks: the copy is
+  # a full one, which needs the room for it.
+  if ((nocow)) && ! set_nocow "$partial" && ((reflink)); then
+    reflink=0
+    ((free >= used + spare)) || {
+      abandon
+      die "not enough room: $partial can't turn copy-on-write off, so the copy is a full one and needs $(((used + spare) / spare)) GB free, $root has $((free / spare)) GB"
+    }
+  fi
   errors=$partial.errors
   /usr/bin/cp -a --reflink=auto --sparse=always -- "$windows/." "$partial/windows" 2>"$errors" &
   copy_pid=$!
