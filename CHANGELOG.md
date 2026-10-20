@@ -15,6 +15,11 @@ chaves.omawin` brings you the latest.
 
 ### Changed
 
+- **The repository is now `diogochaves/omawin`** (it was
+  `diogochaves/omarchy-omawin`). Nothing to do: the old address redirects,
+  so `omarchy plugin update` keeps working, and the plugin id
+  `chaves.omawin` is the same.
+
 - **Install is off on ARM machines.** Omarchy 4.5 runs on ARM, but its
   Windows VM is the x86_64 Windows 11 and refuses to install on anything
   else; the card says so instead of opening an installer that fails.

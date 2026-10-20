@@ -23,7 +23,7 @@ same one the launcher entry runs.
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/diogochaves/omarchy-omawin --enable
+omarchy plugin add https://github.com/diogochaves/omawin --enable
 ```
 
 Or from its page in the
