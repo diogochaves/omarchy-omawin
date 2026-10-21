@@ -28,6 +28,11 @@ chaves.omawin` brings you the latest.
 - **Login's Change… fields say what they are for.** A screen reader called
   the username field nothing and the password field "unchanged"; they are
   now Username and Password, with their hints.
+- **The card's clickable text works from a screen reader too**: "Key ·
+  set up →" on the stopped card, "Show the rule" in Passwordless actions and
+  "Show what it runs" in Clean shutdown (each says whether it is folded, and
+  what it shows can be read), and Tune's "Back up →" and "Remove VM →"
+  links.
 
 ### Changed
 

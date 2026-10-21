@@ -232,6 +232,12 @@ Panel {
     return String(text).split(" · ").join(", ").replace(/(^| )—$/, "$1unknown")
   }
 
+  // Tune's "Back up →" and "Remove VM →" links, for a click and for a
+  // screen reader's press alike.
+  function openLink(link) {
+    if ((link === "backup" || link === "remove") && root.can(link)) root.openFace(link)
+  }
+
   // ------------------------------------------------------------ the faces
 
   // What Tune is currently offering. Seeded from the VM's own shape every time
@@ -1012,10 +1018,18 @@ Panel {
               }
 
               MouseArea {
+                id: keySetUp
                 anchors.fill: parent
                 enabled: service.keyText === ""
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: root.openFace("key")
+                // A link for a screen reader while it is one; once a key is
+                // set, the pair is plain text and this stays out.
+                Accessible.role: Accessible.Link
+                Accessible.name: "Set up a key"
+                Accessible.description: "Opens Key binding"
+                Accessible.ignored: !keySetUp.enabled
+                Accessible.onPressAction: if (keySetUp.enabled) root.openFace("key")
               }
             }
 
@@ -1475,8 +1489,32 @@ Panel {
               font.family: root.family
               font.pixelSize: Style.font.caption
               text: "A disk can't shrink. For a smaller one, <a href=\"backup\"><b>Back up →</b></a>, then <a href=\"remove\"><b>Remove VM →</b></a> and Install… again."
-              onLinkActivated: function (link) {
-                if ((link === "backup" || link === "remove") && root.can(link)) root.openFace(link)
+              onLinkActivated: function (link) { root.openLink(link) }
+
+              // For a screen reader: the sentence, then each link as a node
+              // of its own, all three stand-ins that draw nothing and take no
+              // input. The Text itself sets no Accessible.*: given a role,
+              // Qt publishes its links as nodes that no press can activate
+              // (no action at all), beside these. A Text can't say where one
+              // of its links sits, so each covers the whole sentence.
+              Item {
+                anchors.fill: parent
+                Accessible.role: Accessible.StaticText
+                Accessible.name: "A disk can't shrink. For a smaller one, Back up, then Remove VM and Install… again."
+              }
+
+              Item {
+                anchors.fill: parent
+                Accessible.role: Accessible.Link
+                Accessible.name: "Back up"
+                Accessible.onPressAction: root.openLink("backup")
+              }
+
+              Item {
+                anchors.fill: parent
+                Accessible.role: Accessible.Link
+                Accessible.name: "Remove VM"
+                Accessible.onPressAction: root.openLink("remove")
               }
 
               HoverHandler {
@@ -1906,6 +1944,12 @@ Panel {
             font.pixelSize: Style.font.caption
             font.underline: true
             text: root.showRule ? "Hide the rule ▾" : "Show the rule ▸"
+            // A heading that folds: one name, and the fold as its state
+            // (Qt has no `expanded`), without the arrows.
+            Accessible.role: Accessible.Button
+            Accessible.name: "Show the rule"
+            Accessible.description: root.showRule ? "unfolded" : "folded"
+            Accessible.onPressAction: root.showRule = !root.showRule
 
             MouseArea {
               anchors.fill: parent
@@ -1944,6 +1988,10 @@ Panel {
                 + "/usr/bin/omarchy-windows-vm __priv down\n"
                 + "/usr/bin/docker pause omarchy-windows\n"
                 + "/usr/bin/docker unpause omarchy-windows"
+              // What unfolding shows, so the fold reveals something to a
+              // screen reader too.
+              Accessible.role: Accessible.StaticText
+              Accessible.name: ruleText.text
             }
           }
 
@@ -2036,6 +2084,11 @@ Panel {
             font.pixelSize: Style.font.caption
             font.underline: true
             text: root.showUnit ? "Hide what it runs ▾" : "Show what it runs ▸"
+            // The same fold as the rule's.
+            Accessible.role: Accessible.Button
+            Accessible.name: "Show what it runs"
+            Accessible.description: root.showUnit ? "unfolded" : "folded"
+            Accessible.onPressAction: root.showUnit = !root.showUnit
 
             MouseArea {
               anchors.fill: parent
@@ -2071,6 +2124,8 @@ Panel {
               text: "When Docker stops, just before it:\n"
                 + "/usr/bin/docker unpause omarchy-windows\n"
                 + "/usr/bin/docker stop -t 120 omarchy-windows"
+              Accessible.role: Accessible.StaticText
+              Accessible.name: unitText.text
             }
           }
 
