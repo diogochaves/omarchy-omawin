@@ -5,6 +5,12 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Changed
+
+- **Lighter on the shell.** The card is built the first time you open it,
+  not on every monitor's bar when the shell starts: about 10 MB less memory
+  per bar for a card that is never opened.
+
 ## 0.5.1 — 2026-10-21
 
 ### Fixed

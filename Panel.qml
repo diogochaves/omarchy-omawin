@@ -97,6 +97,15 @@ Panel {
   // the sub-faces. Everything the live card draws is gated on `live`.
   property string face: "live"
   readonly property bool live: root.face === "live"
+
+  // The card is built on its first open (see cardComponent) and kept; null
+  // until then, so everything here that reads into it checks first.
+  property bool cardWanted: false
+  readonly property Item card: cardLoader.item
+  function ensureCard() {
+    root.cardWanted = true
+    return root.card
+  }
   // Whether the VM is off as far as the sampler is concerned — on the failed
   // card that is the state underneath. The compose can only be rewritten here,
   // so it gates Tune, Update password and both of their faces.
@@ -300,10 +309,10 @@ Panel {
 
   // Save needs a password, a known shape to carry through the writer and a VM
   // that is off, for the same reason Apply does.
-  readonly property bool canSave: !service.busy && root.stoppedFace
-    && service.canSavePassword && service.usernameFits(newUsername.text)
-    && (newPassword.text === "" || service.passwordFits(newPassword.text))
-    && service.loginChanges(newUsername.text, newPassword.text)
+  readonly property bool canSave: root.card !== null && !service.busy && root.stoppedFace
+    && service.canSavePassword && service.usernameFits(root.card.newUsername.text)
+    && (root.card.newPassword.text === "" || service.passwordFits(root.card.newPassword.text))
+    && service.loginChanges(root.card.newUsername.text, root.card.newPassword.text)
 
   // Where Back leads from the Remove face, Settings or Tune, and whether the
   // user has said their files are copied out. The switch starts off on every
@@ -372,10 +381,11 @@ Panel {
   // set `face` directly (a save that landed, the VM starting, the card
   // closing) call it themselves.
   function dropPasswordField() {
-    newPassword.text = ""
-    newPassword.password = true
-    newUsername.text = ""
-    keyCatcher.forceActiveFocus()
+    if (!root.card) return
+    root.card.newPassword.text = ""
+    root.card.newPassword.password = true
+    root.card.newUsername.text = ""
+    root.card.forceActiveFocus()
   }
 
   function openFace(name) {
@@ -438,12 +448,13 @@ Panel {
     }
     if (name === "updatePassword") {
       service.clearNotice()
-      newPassword.text = ""
-      newPassword.password = true
-      newUsername.text = service.loginText !== "—" ? service.loginText : ""
+      var card = root.ensureCard()
+      card.newPassword.text = ""
+      card.newPassword.password = true
+      card.newUsername.text = service.loginText !== "—" ? service.loginText : ""
       // The field is the only thing on that face to do: give it the keyboard,
       // which is also what unblocks the panel's key catcher for typing.
-      newPassword.forceActiveFocus()
+      card.newPassword.forceActiveFocus()
     } else {
       root.dropPasswordField()
     }
@@ -475,6 +486,7 @@ Panel {
   onOpenedChanged: {
     service.panelOpen = opened
     if (opened) {
+      root.cardWanted = true
       service.refresh()
       // The polkit rule can have been installed or removed from a terminal
       // since the card was last open, so the switch is re-read every time.
@@ -647,9 +659,9 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    focusTarget: keyCatcher
+    focusTarget: root.card
     contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight)
+    contentHeight: panel.fittedContentHeight(root.card ? root.card.cardHeight : 0)
     // The whole card goes urgent when something failed, the way the mockup
     // marks it. localOrSurfaceSpec is the kit's override hook: hand it a
     // colour that differs from the theme's and it returns a flat border in
@@ -659,8 +671,30 @@ Panel {
       root.failed ? root.urgentColor : Commons.Color.popups.border,
       Commons.Color.popups.border, Math.max(1, Style.space(2)))
 
+    Loader {
+      id: cardLoader
+      anchors.fill: parent
+      active: root.cardWanted || root.opened
+      sourceComponent: cardComponent
+    }
+  }
+
+  // The card itself, built the first time it opens (or the first time the
+  // IPC asks for a face) rather than on every monitor's bar at shell start:
+  // most bars never open it. It stays built after that, like Omarchy 4.5's
+  // own `KeyboardPanel.content`, which 4.0.x lacks, hence the local Loader.
+  // Nothing in it may need to run while it is closed: the samplers, timers
+  // and actions are the Service's, the IPC and the glyph's breath are above.
+  Component {
+    id: cardComponent
+
     PanelKeyCatcher {
       id: keyCatcher
+      // What the root reaches into: Login's two fields, and the column the
+      // panel sizes itself to.
+      property alias newUsername: newUsername
+      property alias newPassword: newPassword
+      readonly property real cardHeight: column.implicitHeight
       anchors.fill: parent
       // The kit's own instruction for a panel with an inline editor: this
       // handler takes keys BEFORE any descendant, so without `blocked` every
