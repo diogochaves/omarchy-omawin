@@ -1843,6 +1843,7 @@ Panel {
               }
 
               Text {
+                id: ruleCaption
                 width: parent.width
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
@@ -1871,6 +1872,19 @@ Panel {
               busy: service.busy
               foreground: root.fg
               onToggled: { service.rulePresent ? service.removeRule() : service.installRule(); root.close() }
+              // For a screen reader: a check box named for what it turns on,
+              // the line under the title as its description. Toggle and Press
+              // both do what a click does, and step aside where the kit has
+              // its own (`accessibleName`), like ActionButton's press.
+              Accessible.role: Accessible.CheckBox
+              Accessible.name: "Passwordless actions"
+              Accessible.description: ruleCaption.text
+              Accessible.checkable: true
+              Accessible.checked: ruleSwitch.checked
+              Accessible.onToggleAction: if (!("accessibleName" in ruleSwitch) && ruleSwitch.interactive && !ruleSwitch.busy)
+                ruleSwitch.toggled()
+              Accessible.onPressAction: if (!("accessibleName" in ruleSwitch) && ruleSwitch.interactive && !ruleSwitch.busy)
+                ruleSwitch.toggled()
             }
           }
 
@@ -1973,6 +1987,7 @@ Panel {
               }
 
               Text {
+                id: unitCaption
                 width: parent.width
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
@@ -1992,6 +2007,16 @@ Panel {
               busy: service.busy
               foreground: root.fg
               onToggled: { service.shutdownEnabled ? service.removeShutdown() : service.installShutdown(); root.close() }
+              // The same form as the rule's.
+              Accessible.role: Accessible.CheckBox
+              Accessible.name: "Clean shutdown"
+              Accessible.description: unitCaption.text
+              Accessible.checkable: true
+              Accessible.checked: unitSwitch.checked
+              Accessible.onToggleAction: if (!("accessibleName" in unitSwitch) && unitSwitch.interactive && !unitSwitch.busy)
+                unitSwitch.toggled()
+              Accessible.onPressAction: if (!("accessibleName" in unitSwitch) && unitSwitch.interactive && !unitSwitch.busy)
+                unitSwitch.toggled()
             }
           }
 
@@ -2470,6 +2495,7 @@ Panel {
             spacing: Style.space(12)
 
             Text {
+              id: restoreLabel
               width: parent.width - restoreSwitch.implicitWidth - parent.spacing
               anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
@@ -2479,6 +2505,10 @@ Panel {
               font.pixelSize: Style.font.caption
               font.bold: true
               text: (restoreFace.fresh ? "Bring back " : "Go back to ") + restoreFace.when
+              // The switch's label: it names the switch, which a screen
+              // reader presses instead. Two check boxes for one choice would
+              // be one too many.
+              Accessible.ignored: true
 
               MouseArea {
                 anchors.fill: parent
@@ -2493,6 +2523,15 @@ Panel {
               checked: root.restoreAck
               foreground: root.fg
               onToggled: root.restoreAck = !root.restoreAck
+              // Named by the sentence beside it; the same form as the rule's.
+              Accessible.role: Accessible.CheckBox
+              Accessible.name: restoreLabel.text
+              Accessible.checkable: true
+              Accessible.checked: restoreSwitch.checked
+              Accessible.onToggleAction: if (!("accessibleName" in restoreSwitch) && restoreSwitch.interactive && !restoreSwitch.busy)
+                restoreSwitch.toggled()
+              Accessible.onPressAction: if (!("accessibleName" in restoreSwitch) && restoreSwitch.interactive && !restoreSwitch.busy)
+                restoreSwitch.toggled()
             }
           }
 
@@ -2682,6 +2721,10 @@ Panel {
               font.family: root.family
               font.pixelSize: Style.font.caption
               text: "I've copied what I need, or there's nothing to keep."
+              // The switch's label: it names the switch, which a screen
+              // reader presses instead. Two check boxes for one choice would
+              // be one too many.
+              Accessible.ignored: true
 
               MouseArea {
                 anchors.fill: parent
@@ -2696,6 +2739,15 @@ Panel {
               checked: root.removeAck
               foreground: root.fg
               onToggled: root.removeAck = !root.removeAck
+              // Named by the sentence beside it; the same form as the rule's.
+              Accessible.role: Accessible.CheckBox
+              Accessible.name: "I've copied what I need, or there's nothing to keep."
+              Accessible.checkable: true
+              Accessible.checked: removeSwitch.checked
+              Accessible.onToggleAction: if (!("accessibleName" in removeSwitch) && removeSwitch.interactive && !removeSwitch.busy)
+                removeSwitch.toggled()
+              Accessible.onPressAction: if (!("accessibleName" in removeSwitch) && removeSwitch.interactive && !removeSwitch.busy)
+                removeSwitch.toggled()
             }
           }
 

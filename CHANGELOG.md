@@ -21,6 +21,10 @@ chaves.omawin` brings you the latest.
   shape it shows in its tooltip read after the name ("stopped, 4 cores, 16G,
   64G"), and pressing it opens the card. The name no longer changes with
   every state or tick of the uptime.
+- **The four switches are check boxes to a screen reader**: Passwordless
+  actions and Clean shutdown, "Go back to …" on the Restore face and "I've
+  copied what I need" on the Remove face. Each says whether it is on, and
+  turning it on from a screen reader does what a click does.
 
 ### Changed
 
