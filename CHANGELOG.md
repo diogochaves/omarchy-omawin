@@ -5,6 +5,8 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+## 0.5.1 — 2026-10-21
+
 ### Fixed
 
 - **Middle click and the key bring the open Windows window forward.** With
