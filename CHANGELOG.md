@@ -25,6 +25,9 @@ chaves.omawin` brings you the latest.
   actions and Clean shutdown, "Go back to …" on the Restore face and "I've
   copied what I need" on the Remove face. Each says whether it is on, and
   turning it on from a screen reader does what a click does.
+- **Login's Change… fields say what they are for.** A screen reader called
+  the username field nothing and the password field "unchanged"; they are
+  now Username and Password, with their hints.
 
 ### Changed
 

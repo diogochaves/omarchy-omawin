@@ -1624,6 +1624,10 @@ Panel {
               KeyNavigation.tab: newPassword
               KeyNavigation.backtab: newPassword
               Keys.onEscapePressed: root.goBack()
+              // The caption above doesn't name a field: say it here, with
+              // its hint.
+              Accessible.name: "Username"
+              Accessible.description: "Letters, digits, _ and -"
             }
           }
 
@@ -1651,6 +1655,11 @@ Panel {
                 // The field holds the keyboard, so the key catcher never sees
                 // this Esc: it has to go back from here.
                 Keys.onEscapePressed: root.goBack()
+                // Not its placeholder, "unchanged", which is an example. Qt
+                // never reports a masked field's name, so the description
+                // says what it is too.
+                Accessible.name: "Password"
+                Accessible.description: "Password. Empty keeps the current one"
               }
 
               ActionButton {
