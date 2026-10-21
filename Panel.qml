@@ -138,9 +138,13 @@ Panel {
   // 3440x1440@144 for as long as the state held; 12.5 frames a second reads
   // as the same breath and measured at 1-3%.
   property real pulsePhase: 1.0
+  // Omarchy 4.5's reduced motion (`omarchy toggle animations`, on by default
+  // in VMs): no breath and no sweep, the states stay told by their words and
+  // colours. Older shells have no Style.reduceMotion, so it reads false.
+  readonly property bool reduceMotion: Style.reduceMotion === true
   Timer {
     id: pulseTimer
-    running: root.pulsing
+    running: root.pulsing && !root.reduceMotion
     // 12.5 frames a second: the same 1.6 s sine breath, sampled coarsely
     // enough to cost about a tenth of a per-frame tween.
     interval: 80
@@ -777,6 +781,12 @@ Panel {
             radius: progressTrack.radius
             width: progressTrack.width * 0.38
             color: root.vmState === "stopping" ? root.dim : Commons.Color.accent
+            // With reduced motion the bar holds still in the middle of its
+            // track; the sweep below writes x only while it runs.
+            Binding on x {
+              when: root.reduceMotion
+              value: (progressTrack.width - progressFill.width) / 2
+            }
 
             // Stepped, not tweened: a per-frame tween repainted the popup at
             // the monitor's refresh rate for as long as a start or a first
@@ -787,7 +797,7 @@ Panel {
             // only runs while the card is actually open.
             Timer {
               id: progressTimer
-              running: progress.visible && root.opened
+              running: progress.visible && root.opened && !root.reduceMotion
               interval: 40
               repeat: true
               triggeredOnStart: true

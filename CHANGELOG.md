@@ -10,6 +10,10 @@ chaves.omawin` brings you the latest.
 - **The key binding answers faster on Omarchy 4.5.** `omarchy-shell
   chaves.omawin …` now reaches the card through the shell's own socket, in
   about 5 ms instead of about 45. Older Omarchy works as before.
+- **Reduced motion is respected.** With Omarchy 4.5's animations turned
+  off (`omarchy toggle animations`, the default in a VM), the bar glyph no
+  longer breathes while the VM starts or stops, and the card's progress bar
+  holds still in the middle instead of sweeping.
 
 ## 0.5.0 — 2026-10-20
 
