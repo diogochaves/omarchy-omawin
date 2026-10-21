@@ -13,6 +13,9 @@ chaves.omawin` brings you the latest.
 
 ### Changed
 
+- **The plugin's description mentions backups.** `omarchy plugin`, the
+  plugin directory and the bar's widget picker now say Omawin backs the VM
+  up and restores it.
 - **The key binding answers faster on Omarchy 4.5.** `omarchy-shell
   chaves.omawin …` now reaches the card through the shell's own socket, in
   about 5 ms instead of about 45. Older Omarchy works as before.

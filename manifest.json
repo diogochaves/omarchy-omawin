@@ -5,7 +5,7 @@
   "version": "0.5.0",
   "author": "Diogo Chaves",
   "license": "MIT",
-  "description": "Microsoft Windows 11 from the bar: start, connect to, pause and stop Omarchy's Windows VM (virtual machine, RDP) in one click, tune its cores, RAM and disk, and keep its login. No terminal, no docker group.",
+  "description": "Microsoft Windows 11 from the bar: start, connect to, pause and stop Omarchy's Windows VM (virtual machine, RDP) in one click, tune its cores, RAM and disk, back it up and restore it, and keep its login. No terminal, no docker group.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Windows VM",
-    "description": "Omarchy's Windows VM in the bar: state by colour, with Start, Connect, Pause, Stop, its shape and its login.",
+    "description": "Omarchy's Windows VM in the bar: state by colour, with Start, Connect, Pause, Stop, its shape, its login and its backups.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right"
