@@ -5,6 +5,12 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Fixed
+
+- **Middle click and the key bring the open Windows window forward.** With
+  the window already open they did nothing; now they focus it and switch to
+  its workspace, as a launcher does for an app that's already running.
+
 ### Changed
 
 - **The key binding answers faster on Omarchy 4.5.** `omarchy-shell

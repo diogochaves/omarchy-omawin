@@ -201,11 +201,13 @@ Panel {
   }
 
   // The one-click shortcut, for the middle button and the `primary` IPC a key
-  // binding calls: Start when stopped, Connect when ready, nothing anywhere
-  // else, and never anything destructive. Says what it did.
+  // binding calls: Start when stopped, Connect when ready, the open window to
+  // the front while a session is up (Start and Connect are off then), nothing
+  // anywhere else, and never anything destructive. Says what it did.
   function primary() {
     if (root.can("start")) { service.start(); return "start" }
     if (root.can("connect")) { service.connect(); return "connect" }
+    if (service.sessionOpen) { service.focusWindow(); return "focus" }
     return ""
   }
 
@@ -534,7 +536,8 @@ Panel {
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
     // What the middle button does, for a key binding: Start when stopped,
-    // Connect when ready, nothing otherwise. Answers "start", "connect" or "".
+    // Connect when ready, the open window to the front while a session is up,
+    // nothing otherwise. Answers "start", "connect", "focus" or "".
     function primary(): string { return root.primary() }
     // The headless check: the painted state, the sampler line it came from
     // and the bar tooltip, e.g. "stopped installed=1 docker=active pid= … |
@@ -623,9 +626,9 @@ Panel {
       opacity: root.glyphOpacity * (root.pulsing ? root.pulsePhase : 1.0)
     }
     // Left opens the card; middle is the one-click shortcut from the mockup's
-    // interaction table (Start when stopped, Connect when ready, nothing
-    // anywhere else — never a destructive action on a single click); right
-    // does nothing.
+    // interaction table (Start when stopped, Connect when ready, the open
+    // window to the front, nothing anywhere else — never a destructive action
+    // on a single click); right does nothing.
     onPressed: function (code) {
       if (code === Qt.MiddleButton) {
         root.primary()

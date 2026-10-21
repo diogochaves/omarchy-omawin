@@ -36,7 +36,10 @@ How Omawin works, what it touches, and why. For using it, see the
   `/usr/bin/omarchy-windows-vm install` and `/usr/bin/omarchy-windows-vm remove`
   in Omarchy's floating terminal,
   `/usr/bin/pkexec /usr/bin/docker pause|unpause omarchy-windows`,
-  `systemctl --user stop omawin-launch`, and `xdg-open` on
+  `systemctl --user stop omawin-launch`, `hyprctl clients -j` and
+  `hyprctl dispatch` to focus the Windows window by its address (a middle
+  click or the key while a session is up, `helpers/focus-window.sh`), and
+  `xdg-open` on
   `http://127.0.0.1:8006` and `~/Windows`. Tune and Login's Change… add
   `/usr/bin/pkexec /usr/bin/omarchy-windows-vm __priv write_compose` with the
   six `KEY=VALUE` lines on **stdin**; Copy password adds `/usr/bin/wl-copy --sensitive`

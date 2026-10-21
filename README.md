@@ -77,8 +77,9 @@ Two things of Omawin's can stay behind:
 
 ## Using it
 
-**Left click** the glyph for the card; **middle click** starts the VM, or
-connects when it is up. Hover for its state, shape and uptime.
+**Left click** the glyph for the card; **middle click** starts the VM,
+connects when it is up, or brings the Windows window forward when it is
+already open. Hover for its state, shape and uptime.
 
 **A key for it:** add a line like this to `~/.config/hypr/bindings.lua`. The
 key does what a middle click does. **Settings › Key binding** has the line

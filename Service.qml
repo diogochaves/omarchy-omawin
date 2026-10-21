@@ -1728,4 +1728,14 @@ QtObject {
   property Process sharedProc: Process {
     command: ["/usr/bin/xdg-open", root.home + "/Windows"]
   }
+
+  // The RDP window to the front, on its workspace, for the one-click shortcut
+  // while a session is up. No window yet (still connecting) is a quiet no-op.
+  function focusWindow() {
+    if (!focusProc.running) focusProc.running = true
+  }
+
+  property Process focusProc: Process {
+    command: ["/usr/bin/bash", root.helpers + "/focus-window.sh"]
+  }
 }

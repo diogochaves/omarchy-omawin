@@ -27,7 +27,7 @@ of it — and the tests create it themselves if it is missing). They also run
 | Method | Does |
 |--------|------|
 | `open` / `close` / `toggle` / `show` / `hide` | the popup |
-| `primary` | what a middle click on the glyph does: Start when stopped, Connect when ready, nothing otherwise. Answers `start`, `connect` or an empty line. Meant for a key binding |
+| `primary` | what a middle click on the glyph does: Start when stopped, Connect when ready, the open Windows window to the front while a session is up, nothing otherwise. Answers `start`, `connect`, `focus` or an empty line. Meant for a key binding |
 | `status` | one line: the painted state, the `vm-state.sh` line behind it and the bar tooltip, e.g. `stopped installed=1 docker=active pid= frozen= cores= ram= web=000 cid= started= disk=64G login=chaves \| Windows VM · STOPPED · 4 cores · 16G · 64G` |
 | `fail <text>` | **debug.** Paints the failed card with `<text>` as the message, without breaking anything to get there. Sticky like a real failure — cleared by the next successful action or state change, or at once with `fail ""`. |
 | `mock <line> [probe] [action]` | **debug.** Stands `<line>` in for `vm-state.sh`, `probe` (`ok`/`no`, or `overdue`: `no` on a boot already past its 150 s patience) in for the RDP probe and `action` (`start`/`stop`) in for a pending transient, so every face of the card can be looked at with the VM switched off. `mock "" "" ""` (all three arguments are required by the IPC) hands the widget back to the real sampler and drops the mocked transient. |
