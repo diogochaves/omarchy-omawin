@@ -226,6 +226,12 @@ Panel {
     return !service.busy && !!service.actions[name]
   }
 
+  // A line as a screen reader should say it: commas for the middle dots that
+  // separate readings on the card, and "unknown" for a bare "—".
+  function spoken(text) {
+    return String(text).split(" · ").join(", ").replace(/(^| )—$/, "$1unknown")
+  }
+
   // ------------------------------------------------------------ the faces
 
   // What Tune is currently offering. Seeded from the VM's own shape every time
@@ -753,6 +759,7 @@ Panel {
 
               // The way into Settings from every live face.
               Button {
+                id: settingsButton
                 visible: root.live
                 anchors.verticalCenter: parent.verticalCenter
                 iconText: root.gearGlyph
@@ -765,9 +772,14 @@ Panel {
                 tooltipText: "Settings"
                 opacity: 0.7
                 onClicked: root.openFace("settings")
+                // The compatible form: see ActionButton.
+                Accessible.role: Accessible.Button
+                Accessible.name: "Settings"
+                Accessible.onPressAction: if (!("accessibleName" in settingsButton)) settingsButton.clicked()
               }
 
               Button {
+                id: backButton
                 visible: !root.live
                 anchors.verticalCenter: parent.verticalCenter
                 bordered: true
@@ -783,6 +795,11 @@ Panel {
                 enabled: !root.faceWriting
                 opacity: enabled ? 1.0 : 0.45
                 onClicked: root.goBack()
+                // The key hint goes in the description, never the name.
+                Accessible.role: Accessible.Button
+                Accessible.name: "Back"
+                Accessible.description: "Shortcut: Esc"
+                Accessible.onPressAction: if (!("accessibleName" in backButton) && backButton.enabled) backButton.clicked()
               }
             }
           }
@@ -1324,6 +1341,7 @@ Panel {
                 iconText: root.minusGlyph
                 allowed: !service.busy && root.tuneCores > 2
                 onClicked: root.tuneCores = root.tuneCores - 1
+                Accessible.name: "Fewer cores"
               }
 
               InfoValue {
@@ -1338,6 +1356,7 @@ Panel {
                 allowed: !service.busy
                   && (service.hostCores <= 0 || root.tuneCores < service.hostCores)
                 onClicked: root.tuneCores = root.tuneCores + 1
+                Accessible.name: "More cores"
               }
             }
 
@@ -1376,6 +1395,7 @@ Panel {
                 delegate: ActionButton {
                   required property var modelData
                   text: modelData + "G"
+                  choice: true
                   selected: root.tuneRam === modelData + "G"
                   allowed: !service.busy
                   onClicked: root.tuneRam = modelData + "G"
@@ -1415,6 +1435,7 @@ Panel {
                 delegate: ActionButton {
                   required property var modelData
                   text: modelData + "G" + (modelData + "G" === service.currentDisk ? " now" : "")
+                  choice: true
                   selected: root.tuneDisk === modelData + "G"
                   allowed: !service.busy && root.diskAllowed(modelData)
                   onClicked: root.tuneDisk = modelData + "G"
@@ -1619,6 +1640,14 @@ Panel {
                 iconText: newPassword.password ? root.eyeGlyph : root.eyeOffGlyph
                 allowed: true
                 onClicked: newPassword.password = !newPassword.password
+                // One name, and whether the password shows is its state. The
+                // kit has no toggle action of its own, so this one is never
+                // doubled; without it, Qt would flip `checked` by itself and
+                // leave the field masked.
+                Accessible.name: "Show password"
+                Accessible.checkable: true
+                Accessible.checked: !newPassword.password
+                Accessible.onToggleAction: eyeButton.clicked()
               }
             }
           }
@@ -2334,6 +2363,10 @@ Panel {
             visible: !backupFace.running && service.backupList.length > 0
             width: parent.width
             spacing: Style.space(6)
+            // A list of rows for a screen reader, named for what the
+            // header above it says; the open row is the selected one.
+            Accessible.role: Accessible.List
+            Accessible.name: "Backups on disk"
 
             Repeater {
               model: service.backupList
@@ -2745,6 +2778,16 @@ Panel {
     implicitHeight: rowText.implicitHeight + Style.space(10)
     opacity: allowed ? 1.0 : 0.45
 
+    // For a screen reader: a button named by its title, with the value and
+    // the tip as its description ("4 cores, 16G, 64G. Cores, RAM and disk
+    // for the next start."). The press does what the click does, and only
+    // when the click would. A hand-built row, not a kit control: no guard.
+    Accessible.role: Accessible.Button
+    Accessible.name: settingsRow.title
+    Accessible.description: (settingsRow.value !== "" ? root.spoken(settingsRow.value) + ". " : "")
+      + settingsRow.tip
+    Accessible.onPressAction: if (rowArea.enabled) settingsRow.activated()
+
     Rectangle {
       anchors.fill: parent
       anchors.leftMargin: -Style.space(6)
@@ -2819,6 +2862,22 @@ Panel {
     width: parent.width
     implicitHeight: backupText.implicitHeight + Style.space(16)
 
+    // Opens this row's actions, for a click and a screen reader's press.
+    function pick() {
+      root.backupPick = backupItem.entry.path
+      root.backupConfirm = ""
+    }
+
+    // For a screen reader: a list item named by when it was made, its
+    // second line and its own size as the description, and the open row
+    // selected. The buttons it shows when open are its children.
+    Accessible.role: Accessible.ListItem
+    Accessible.name: backupWhen.text
+    Accessible.description: root.spoken(backupWhere.text) + ", own size " + backupOwn.text
+    Accessible.selectable: true
+    Accessible.selected: backupItem.open
+    Accessible.onPressAction: if (backupArea.enabled) backupItem.pick()
+
     Rectangle {
       anchors.fill: parent
       radius: Style.cornerRadius
@@ -2831,7 +2890,7 @@ Panel {
       hoverEnabled: true
       enabled: !backupItem.open
       cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-      onClicked: { root.backupPick = backupItem.entry.path; root.backupConfirm = "" }
+      onClicked: backupItem.pick()
     }
 
     Column {
@@ -2861,6 +2920,7 @@ Panel {
       }
 
       Text {
+        id: backupWhere
         width: parent.width
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
@@ -2955,12 +3015,23 @@ Panel {
 
   // Button has no disabled paint of its own, so a dead button is the kit's
   // bordered button at the mockup's 0.45 opacity with its input off.
+  //
+  // For a screen reader: role, name (its text, else its tooltip; an icon-only
+  // use names itself) and the press, in the form that loads on every Omarchy.
+  // A kit with accessibility (it has `accessibleName`) presses the button
+  // itself, so this press steps aside there and never fires twice. It checks
+  // `enabled` as the kit's does: a dead button must not press either way.
   component ActionButton: Button {
+    id: actionButton
     property bool allowed: false
     // The one action the state is for (Start, Connect, Resume, Install…):
     // the kit's selected paint, the accent-tinted fill its segmented
     // controls give the chosen option, so it reads first in every theme.
     property bool primary: false
+    // One of a row of options (Tune's RAM and Disk chips), where `selected`
+    // is the one picked. Only these report it to a screen reader: on the
+    // others, `selected` is the primary paint, not a choice.
+    property bool choice: false
 
     selected: primary && allowed
     bordered: true
@@ -2972,6 +3043,14 @@ Panel {
     fontFamily: root.family
     enabled: allowed
     opacity: allowed ? 1.0 : 0.45
+
+    Accessible.role: Accessible.Button
+    Accessible.name: actionButton.text !== "" ? actionButton.text : actionButton.tooltipText
+    Accessible.description: actionButton.text !== "" && actionButton.tooltipText !== actionButton.text
+      ? actionButton.tooltipText : ""
+    Accessible.selectable: actionButton.choice
+    Accessible.selected: actionButton.choice && actionButton.selected
+    Accessible.onPressAction: if (!("accessibleName" in actionButton) && actionButton.enabled) actionButton.clicked()
   }
 
   // The Power panel's info pairs, with two additions: `dimValue` for the
@@ -3094,6 +3173,9 @@ Panel {
       tooltipText: "Dismiss"
       implicitWidth: implicitHeight
       onClicked: banner.dismissed()
+      Accessible.role: Accessible.Button
+      Accessible.name: "Dismiss"
+      Accessible.onPressAction: if (!("accessibleName" in bannerClose)) bannerClose.clicked()
     }
   }
 

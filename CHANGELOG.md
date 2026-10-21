@@ -5,6 +5,19 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Added
+
+- **Screen readers can find and press the card's buttons.** Every button on
+  every face is announced by name and can be pressed from a screen reader,
+  including the ones that only show an icon: Settings, Fewer cores and More
+  cores in Tune, the banner's Dismiss, and Show password in Login's Change…,
+  which also says whether the password is showing. Each Settings row is a
+  button named by its title, with its value and tip read after it, and each
+  backup in Backups is a row of a list that says which one is open. Tune's
+  RAM and Disk chips say which one is picked. A greyed-out button stays
+  unpressable. This needs a shell that publishes accessibility (Quickshell
+  0.3.2 or later); on older ones nothing changes.
+
 ### Changed
 
 - **Lighter on the shell.** The card is built the first time you open it,
