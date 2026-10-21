@@ -34,6 +34,13 @@ The Windows glyph appears in the bar. To place it:
 omarchy bar move chaves.omawin --section right --after omarchy.tray
 ```
 
+On Omarchy 4.5 it can also live in the tray's drawer, out of the bar until
+you open the drawer; the card opens from there the same way:
+
+```sh
+omarchy bar move chaves.omawin --section tray
+```
+
 Start, Stop, Pause and Resume ask for your password each time until you turn
 on **Passwordless actions** in the card's Settings. Tune and Login's Change…
 always ask.
