@@ -516,6 +516,14 @@ Panel {
     target: "chaves.omawin"
     enabled: root.ipcOwner
 
+    // Omarchy 4.5's IpcRegistry lets `omarchy-shell` answer over the shell's
+    // own socket (about 5 ms) instead of starting a `qs ipc` client (about
+    // 45 ms); `qs ipc` still reaches the handler either way. The registry
+    // answers only an enabled handler, so the IpcOwner election holds. Older
+    // shells have no registry: the name does not resolve and nothing changes.
+    Component.onCompleted: { try { IpcRegistry.register(ipc) } catch (e) {} }
+    Component.onDestruction: { try { IpcRegistry.unregister(ipc) } catch (e) {} }
+
     function open(): void { root.open() }
     function close(): void { root.close() }
     function show(): void { root.open() }
