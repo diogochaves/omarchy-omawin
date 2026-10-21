@@ -655,6 +655,25 @@ Panel {
       if (code === Qt.RightButton) return
       root.toggle()
     }
+    // For a screen reader: a name that stays put, since the tooltip changes
+    // with the state and counts the uptime, and that status line as the
+    // description. The press is a left click, in the compatible form (see
+    // ActionButton): the kit presses it itself where it has `accessibleName`.
+    Accessible.role: Accessible.Button
+    Accessible.name: "Windows VM"
+    Accessible.description: root.barDescription
+    Accessible.onPressAction: if (!("accessibleName" in button) && button.interactive && button.pressable)
+      button.triggerPress(Qt.LeftButton)
+  }
+
+  // The tooltip without its "Windows VM · " (that is the name), the state in
+  // lower case (a screen reader may spell out capitals) and commas for the
+  // middle dots: "stopped, 4 cores, 16G, 64G".
+  readonly property string barDescription: {
+    var text = service.tooltip.replace(/^Windows VM · /, "")
+    if (text.indexOf(service.label) === 0)
+      text = service.label.toLowerCase() + text.slice(service.label.length)
+    return root.spoken(text)
   }
 
   // ------------------------------------------------------------- the popup

@@ -17,6 +17,10 @@ chaves.omawin` brings you the latest.
   RAM and Disk chips say which one is picked. A greyed-out button stays
   unpressable. This needs a shell that publishes accessibility (Quickshell
   0.3.2 or later); on older ones nothing changes.
+- **The bar glyph is "Windows VM" to a screen reader**, with the state and
+  shape it shows in its tooltip read after the name ("stopped, 4 cores, 16G,
+  64G"), and pressing it opens the card. The name no longer changes with
+  every state or tick of the uptime.
 
 ### Changed
 
