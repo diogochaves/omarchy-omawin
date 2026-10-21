@@ -1399,7 +1399,6 @@ Panel {
                 // The number alone between − and + says nothing: say what it counts.
                 Accessible.role: Accessible.StaticText
                 Accessible.name: "Cores " + root.tuneCores
-                Accessible.description: service.hostCores > 0 ? "of " + service.hostCores + " on this machine" : ""
               }
 
               ActionButton {
@@ -1634,6 +1633,8 @@ Panel {
             text: root.stoppedFace
               ? "Changed the password inside Windows, or want another account? Change it here so Connect keeps working."
               : "Changed the password inside Windows, or want another account? Stop the VM first: saving it here also rewrites the compose, which is only read at the next start."
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
           }
 
           // Change… opens the fields on this same face (the `updatePassword`
@@ -1670,13 +1671,20 @@ Panel {
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: "Type an account that already exists in Windows. This changes what this machine sends when connecting; it can't create or rename the account."
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
           }
 
           Column {
             width: parent.width
             spacing: Style.spacing.labelGap
 
-            FieldHeader { label: "Username"; hint: "letters, digits, _ and -" }
+            FieldHeader {
+              label: "Username"
+              hint: "letters, digits, _ and -"
+              // The field says both itself.
+              Accessible.ignored: true
+            }
 
             TextField {
               id: newUsername
@@ -1700,7 +1708,12 @@ Panel {
             width: parent.width
             spacing: Style.spacing.labelGap
 
-            FieldHeader { label: "Password"; hint: "empty keeps the current one" }
+            FieldHeader {
+              label: "Password"
+              hint: "empty keeps the current one"
+              // The field says both itself.
+              Accessible.ignored: true
+            }
 
             Row {
               width: parent.width
@@ -1755,6 +1768,8 @@ Panel {
             text: service.canSavePassword
               ? "Changed the password inside Windows? Web viewer (it signs in by itself) › Settings › Accounts › Sign-in options, then come back here."
               : "The VM's shape is not known yet, and the compose cannot be rewritten without it. Start the VM once, then come back."
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
           }
 
           ActionRow {
@@ -1794,6 +1809,8 @@ Panel {
             text: "VM"
             foreground: root.fg
             fontFamily: root.family
+            Accessible.role: Accessible.StaticText
+            Accessible.name: "VM"
           }
 
           SettingsRow {
@@ -1851,6 +1868,9 @@ Panel {
             text: "DESKTOP"
             foreground: root.fg
             fontFamily: root.family
+            // Not in capitals, which a screen reader may spell out.
+            Accessible.role: Accessible.StaticText
+            Accessible.name: "Desktop"
           }
 
           SettingsRow {
@@ -2032,6 +2052,8 @@ Panel {
             text: service.rulePresent
               ? "Start, Stop, Pause and Resume run without a dialog. Tune's Apply and Login's Save still ask: rewriting the VM's configuration stays behind authorisation on purpose, and it is rare."
               : "Installs /etc/polkit-1/rules.d/49-omawin.rules. Opens a terminal; sudo asks for your password once and the file is shown before it is written."
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
           }
 
           ActionRow {
@@ -2166,6 +2188,8 @@ Panel {
             text: service.shutdownEnabled
               ? "Removing it leaves it armed until the next reboot: stopping it now would shut Windows down."
               : "Installs /etc/systemd/system/" + service.shutdownUnit + ". Opens a terminal; sudo asks for your password once and the file is shown before it is written."
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
           }
 
           ActionRow {
@@ -2201,6 +2225,8 @@ Panel {
             InfoValue {
               visible: service.keyText !== ""
               text: service.keyText
+              Accessible.role: Accessible.StaticText
+              Accessible.name: text
             }
 
             Text {
@@ -2215,6 +2241,8 @@ Panel {
                 : root.keySetupOpen
                   ? "One key to start Windows, or connect when it's running. Add this line to ~/.config/hypr/bindings.lua and save:"
                   : "One key to start Windows, or connect when it's running."
+              Accessible.role: Accessible.StaticText
+              Accessible.name: text
             }
 
             Rectangle {
@@ -2235,6 +2263,8 @@ Panel {
                 font.family: root.family
                 font.pixelSize: Style.font.caption
                 text: service.keyLine
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
               }
             }
           }
@@ -2402,6 +2432,8 @@ Panel {
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: "Start stays off until the copy ends. Cancel deletes the half-made copy."
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
           }
 
           ActionRow {
@@ -2433,6 +2465,8 @@ Panel {
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: "It's first in the list below."
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
           }
 
           ActionRow {
@@ -2568,6 +2602,8 @@ Panel {
                 + " The backup stays."
               : "Windows goes back to how it was on " + restoreFace.when
                 + ": files, apps and settings since then are gone from the VM. Nothing is lost for good, because step 1 keeps today's VM as a backup."
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
           }
 
           Text {
@@ -2589,6 +2625,8 @@ Panel {
                   : " (a full copy, " + State.gbText(service.backupPlan.used) + ").") : ".")
                 + "\n2. Puts this backup's disk and login back."
                 + "\n3. Asks for your password only if the login or the disk size changes."
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
           }
 
           // Nothing is replaced with no VM, so nothing to confirm.
@@ -2682,6 +2720,8 @@ Panel {
             font.pixelSize: Style.font.caption
             text: service.restoreFresh ? "Cancel works while it copies, and leaves things as they were."
               : "Start stays off until it ends. Cancel works while it copies, and leaves the VM as it was."
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
           }
 
           ActionRow {
@@ -2896,6 +2936,8 @@ Panel {
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: "Opens a terminal. Omarchy asks you to confirm (default No), then for your password."
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
           }
         }
       }
@@ -3289,6 +3331,10 @@ Panel {
 
     width: parent.width
     implicitHeight: Math.max(fieldLabel.implicitHeight, fieldHint.implicitHeight)
+    // One line for a screen reader, the heading and its bound: "RAM, of 64G,
+    // Windows keeps all of it".
+    Accessible.role: Accessible.StaticText
+    Accessible.name: root.spoken(field.label + (field.hint !== "" ? " · " + field.hint : ""))
 
     InfoValue {
       id: fieldLabel

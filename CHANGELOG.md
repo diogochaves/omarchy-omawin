@@ -40,6 +40,11 @@ chaves.omawin` brings you the latest.
   restore ended, and the Remove face's warning and its two lists. Why a
   start, stop, backup, delete or restore failed is announced as an alert.
   Nothing on screen changes.
+- **The card's explanations can be read too**: the headings in Tune, Key
+  binding and Settings, with their limits ("RAM, of 64G, Windows keeps all
+  of it"), what Login, Passwordless actions, Clean shutdown, Backups,
+  Restore and Remove VM say about what they will do, and the key binding
+  line to paste.
 
 ### Changed
 
