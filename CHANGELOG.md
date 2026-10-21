@@ -33,6 +33,13 @@ chaves.omawin` brings you the latest.
   "Show what it runs" in Clean shutdown (each says whether it is folded, and
   what it shows can be read), and Tune's "Back up →" and "Remove VM →"
   links.
+- **A screen reader can read what the card says.** The title and state at
+  the top of every face, each reading ("Cores 4", "Disk 64G, 12G used"), the
+  line under the state, the Cores count in Tune and why Apply is off, the
+  banners, Backups' status and its empty list, Delete's question, how a
+  restore ended, and the Remove face's warning and its two lists. Why a
+  start, stop, backup, delete or restore failed is announced as an alert.
+  Nothing on screen changes.
 
 ### Changed
 

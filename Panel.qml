@@ -778,6 +778,12 @@ Panel {
           fontFamily: root.family
           iconOpacity: root.vmState === "not-installed" && root.live ? 0.45 : 1.0
           iconComponent: winHero
+          // The first thing on every face: its title and the state line
+          // ("Windows VM, stopped"; "Tune, Windows VM, stopped"). The hero
+          // publishes nothing of its own on either kit.
+          Accessible.role: Accessible.StaticText
+          Accessible.name: hero.title + ", "
+            + (root.live ? service.label.toLowerCase() : root.spoken(hero.meta))
           trailingControl: Component {
             Row {
               spacing: Style.space(10)
@@ -908,6 +914,8 @@ Panel {
             : service.bootOverdue ? root.warnColor : root.dim
           font.family: root.family
           font.pixelSize: Style.font.caption
+          Accessible.role: Accessible.StaticText
+          Accessible.name: text
           text: {
             if (root.vmState === "not-installed" && !service.x86)
               return "Omarchy's Windows VM runs on x86_64 PCs only, and this machine is " + service.machine + "."
@@ -1015,6 +1023,8 @@ Panel {
                 label: "Key"
                 value: service.keyText !== "" ? service.keyText.replace(/ \+ /g, " ") : "set up →"
                 dimValue: service.keyText === ""
+                // Until a key is set, the link below is what a screen reader finds.
+                Accessible.ignored: service.keyText === ""
               }
 
               MouseArea {
@@ -1091,6 +1101,10 @@ Panel {
           visible: root.live && root.failed && service.failedMessage !== ""
           width: parent.width
           implicitHeight: failureText.implicitHeight + Style.space(12)
+          // What went wrong is the reason this card looks the way it does,
+          // and it appears by itself: an alert.
+          Accessible.role: Accessible.AlertMessage
+          Accessible.name: service.failedMessage
 
           Rectangle {
             anchors.fill: parent
@@ -1382,6 +1396,10 @@ Panel {
                 width: Style.space(44)
                 horizontalAlignment: Text.AlignHCenter
                 text: String(root.tuneCores)
+                // The number alone between − and + says nothing: say what it counts.
+                Accessible.role: Accessible.StaticText
+                Accessible.name: "Cores " + root.tuneCores
+                Accessible.description: service.hostCores > 0 ? "of " + service.hostCores + " on this machine" : ""
               }
 
               ActionButton {
@@ -1404,6 +1422,8 @@ Panel {
               font.family: root.family
               font.pixelSize: Style.font.caption
               text: "All " + service.hostCores + " threads. Omarchy will stutter whenever Windows is busy."
+              Accessible.role: Accessible.StaticText
+              Accessible.name: text
             }
           }
 
@@ -1445,6 +1465,8 @@ Panel {
               font.family: root.family
               font.pixelSize: Style.font.caption
               text: root.tuneRamNote
+              Accessible.role: Accessible.StaticText
+              Accessible.name: text
             }
           }
 
@@ -1533,6 +1555,9 @@ Panel {
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: root.tuneSummary
+            // What Apply will do, or why it is off.
+            Accessible.role: Accessible.StaticText
+            Accessible.name: root.spoken(text)
           }
 
           ActionRow {
@@ -1568,6 +1593,8 @@ Panel {
               label: "Password"
               value: service.revealed ? service.revealedPassword : "••••••••••••"
               dimValue: !service.revealed
+              // Not twelve bullets; revealed, it reads what Reveal shows.
+              Accessible.name: service.revealed ? "Password " + service.revealedPassword : "Password hidden"
             }
             InfoPair {
               label: "Stored in"
@@ -2289,6 +2316,8 @@ Panel {
               label: "Copy to"
               value: backupFace.plan
                 ? State.tildePath(backupFace.plan.where + "/" + backupFace.plan.target, service.home) : "—"
+              // "Copy to …" alone would read as a command with nothing to press.
+              Accessible.name: "Copies to " + root.spoken(value)
             }
             InfoPair {
               label: "Space"
@@ -2311,6 +2340,11 @@ Panel {
               || (backupFace.plan && !backupFace.plan.ok) ? root.urgentColor : root.dim
             font.family: root.family
             font.pixelSize: Style.font.caption
+            // A failed copy is announced: it appears by itself, when the
+            // copy gives up. The rest is the face's own status.
+            Accessible.role: service.backupError !== "" && !root.freshFace && root.stoppedFace
+              ? Accessible.AlertMessage : Accessible.StaticText
+            Accessible.name: text
             text: root.freshFace ? "There's no VM now. Restore… brings one of these back as it was, where it was."
               : !root.stoppedFace ? "Stop the VM to back it up: a copy of a disk Windows is writing to would be torn. You can still look at the backups below."
               : service.backupError !== "" ? "The backup failed: " + service.backupError
@@ -2453,6 +2487,9 @@ Panel {
             font.family: root.family
             font.pixelSize: Style.font.caption
             text: "Couldn't delete it: " + service.backupDeleteError
+            // The answer to a Delete: it appears by itself.
+            Accessible.role: Accessible.AlertMessage
+            Accessible.name: text
           }
 
           Text {
@@ -2465,6 +2502,8 @@ Panel {
             font.pixelSize: Style.font.caption
             text: root.freshFace ? "No backups found, beside where the VM was or on your drives."
               : "No backups yet. Back up now makes the first, next to the VM."
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
           }
 
           Column {
@@ -2672,6 +2711,9 @@ Panel {
                 + (service.restoreFresh ? ": the first Start downloads Omarchy's Windows image again, so it takes a little longer." : ".")
               : "Not restored: " + service.restoreError
                 + (service.restoreSafety !== "" ? " The safety backup it made stays in the list." : "")
+            // How it ended; a failure is announced, as the card's own is.
+            Accessible.role: restoreFace.failed ? Accessible.AlertMessage : Accessible.StaticText
+            Accessible.name: text
           }
 
           InfoPair {
@@ -2707,6 +2749,8 @@ Panel {
 
           BannerBox {
             accentColor: root.urgentColor
+            // Part of the face, not something that appeared: plain text.
+            alert: false
             text: "Back up first. Everything inside Windows is deleted: your files, apps and settings. Keep the whole VM with a backup (Backups…), or copy what you want into the Shared folder, which stays (Start and Connect from the card, then come back)."
           }
 
@@ -2726,7 +2770,11 @@ Panel {
             width: parent.width
             spacing: Style.spacing.labelGap
 
-            InfoValue { text: "Deleted for good" }
+            InfoValue {
+              text: "Deleted for good"
+              Accessible.role: Accessible.StaticText
+              Accessible.name: text
+            }
             InfoPair {
               label: "Windows and its disk"
               value: service.currentDisk !== "" ? service.currentDisk : "—"
@@ -2753,7 +2801,11 @@ Panel {
             width: parent.width
             spacing: Style.spacing.labelGap
 
-            InfoValue { text: "Kept" }
+            InfoValue {
+              text: "Kept"
+              Accessible.role: Accessible.StaticText
+              Accessible.name: text
+            }
             InfoPair {
               label: "Shared folder"
               value: "~/Windows"
@@ -3113,6 +3165,9 @@ Panel {
           : "Delete this backup? " + (backupItem.entry.own > 0
             ? "It frees " + State.sizeText(backupItem.entry.own) + ". " : "")
             + "It can't be undone."
+        // The question the two buttons under it answer.
+        Accessible.role: Accessible.StaticText
+        Accessible.name: text
       }
 
       ActionRow {
@@ -3203,6 +3258,13 @@ Panel {
     width: parent.width
     spacing: Style.space(8)
 
+    // One line of text for a screen reader per pair: "Cores 4", "Disk 64G,
+    // 12G used". A use may say it better (the masked password). A pair with
+    // no value (a step's name while it waits) is its label alone.
+    Accessible.role: Accessible.StaticText
+    Accessible.name: root.spoken(pair.label + (pair.value !== "" ? " " + pair.value : ""))
+      + (pair.note !== "" ? ", " + pair.note : "")
+
     InfoLabel { id: pairLabel; text: pair.label; color: pair.urgent ? root.urgentColor : root.fg }
     Item {
       width: Math.max(0, pair.width - pairLabel.implicitWidth - pairValue.implicitWidth
@@ -3257,10 +3319,16 @@ Panel {
     property color accentColor: root.fg
     // A × at the right, for a banner that stays until it is put away.
     property bool dismissible: false
+    // For a screen reader: an alert, since a banner appears by itself (a
+    // write's answer, a RAM warning, a grown disk); plain text when it is
+    // part of the face.
+    property bool alert: true
     signal dismissed()
 
     width: parent.width
     implicitHeight: bannerText.implicitHeight + Style.space(12)
+    Accessible.role: banner.alert ? Accessible.AlertMessage : Accessible.StaticText
+    Accessible.name: banner.text
 
     Rectangle {
       anchors.fill: parent
