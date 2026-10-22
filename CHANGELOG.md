@@ -5,6 +5,8 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+## 0.6.0 — 2026-10-21
+
 ### Fixed
 
 - **Windows fills its window after a connect.** About half the time Windows
