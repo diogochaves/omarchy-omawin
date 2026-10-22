@@ -5,6 +5,15 @@ chaves.omawin` brings you the latest.
 
 ## Unreleased
 
+### Fixed
+
+- **Windows fills its window after a connect.** About half the time Windows
+  stayed at 1024x768 in the top-left corner of a black window, until you
+  resized it; pausing and resuming made no difference. A second after the
+  session comes up, Omawin now nudges the window's border by a pixel and
+  back so Windows takes the window's size. If it was already right, the
+  screen blinks once while Windows changes resolution.
+
 ### Added
 
 - **Screen readers can find and press the card's buttons.** Every button on

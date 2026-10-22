@@ -659,6 +659,8 @@ QtObject {
         // "started" or "already-running": either way there is a unit whose
         // outcome we want, so start watching it.
         root.unitWatch = true
+        // A new session: once it is up, make sure Windows fills its window.
+        if (message === "started") root.fitWindow()
       }
       root.refresh()
     }
@@ -1736,6 +1738,19 @@ QtObject {
   }
 
   property Process focusProc: Process {
-    command: ["/usr/bin/bash", root.helpers + "/focus-window.sh"]
+    command: ["/usr/bin/bash", root.helpers + "/rdp-window.sh", "focus"]
+  }
+
+  // After a connect, about half the time Windows ignored the window's size
+  // and stayed at 1024x768 in its corner (#16): the helper waits for the
+  // session to come up, then resizes the window by two pixels and back so
+  // xfreerdp sends the size again. Quiet whatever happens; it waits for the
+  // window as long as a Start's boot can take.
+  function fitWindow() {
+    if (!fitProc.running) fitProc.running = true
+  }
+
+  property Process fitProc: Process {
+    command: ["/usr/bin/bash", root.helpers + "/rdp-window.sh", "fit"]
   }
 }

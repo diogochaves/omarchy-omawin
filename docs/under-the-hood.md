@@ -38,7 +38,13 @@ How Omawin works, what it touches, and why. For using it, see the
   `/usr/bin/pkexec /usr/bin/docker pause|unpause omarchy-windows`,
   `systemctl --user stop omawin-launch`, `hyprctl clients -j` and
   `hyprctl dispatch` to focus the Windows window by its address (a middle
-  click or the key while a session is up, `helpers/focus-window.sh`), and
+  click or the key while a session is up, `helpers/rdp-window.sh focus`),
+  and after every launch `helpers/rdp-window.sh fit`: it waits for the
+  window, then for `xprop -name "Windows VM - Omarchy" WM_NORMAL_HINTS` to
+  show it resizable (Windows has opened its display channel), and widens
+  the window's border by one pixel for 0.7 s (`hl.dsp.window.set_prop`
+  `border_size` and `no_anim`, then `unset`) so xfreerdp sends the window's
+  size again (#16), and
   `xdg-open` on
   `http://127.0.0.1:8006` and `~/Windows`. Tune and Login's Change… add
   `/usr/bin/pkexec /usr/bin/omarchy-windows-vm __priv write_compose` with the
