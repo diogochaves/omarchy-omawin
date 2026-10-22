@@ -16,7 +16,7 @@ same one the launcher entry runs.
 
 ## What you need
 
-- **Omarchy 4** with its Quickshell shell (built and tested against 4.0.3).
+- **Omarchy 4** with its Quickshell shell: tested on 4.0.6 and 4.5.0-rc1.
 - **Omarchy's Windows VM.** Not installed yet? The card has an **Install**
   button that runs Omarchy's own installer.
 
@@ -100,7 +100,9 @@ o.bind("SUPER + ALT + W", "Windows VM", "omarchy-shell chaves.omawin primary")
   If Windows still hasn't answered on RDP after 2½ minutes, the glyph stops
   breathing and turns yellow, and the card says what may be blocking it.
 - **Ready**: Connect opens the Windows window, signed in. Pause, Stop,
-  Shared folder. CPU shows how busy Windows is right now.
+  Shared folder. CPU shows how busy Windows is right now. A second after
+  the window opens, Omawin makes sure Windows has taken its size; if it
+  already had, the screen blinks once.
 - **Paused**: frozen in memory, using no CPU but still holding all of its
   RAM. Resume picks up where it left off and reopens the window; only Stop
   gives the RAM back.
@@ -147,6 +149,11 @@ o.bind("SUPER + ALT + W", "Windows VM", "omarchy-shell chaves.omawin primary")
   terminal and asks you to confirm.
 
 **‹ Back** at the top right, or **Esc**, goes back.
+
+**With a screen reader**, every button, switch and reading on the card has a
+name, and failures are announced. The bar glyph is "Windows VM", with the
+state after it. This needs a shell that publishes accessibility (Quickshell
+0.3.2 or later); on older ones the card works as before, unnamed.
 
 On omarchy-console's rail, the glyph slides up while the VM is running
 (ready or paused), with an amber edge while it starts, boots or stops and a
@@ -219,7 +226,9 @@ again. The password is the account's password, not its PIN.
   `127.0.0.1`. Nothing leaves the machine.
 - **Runs**: Omarchy's `omarchy-windows-vm` for start, stop, install and
   remove (the last two in a terminal), and
-  `pkexec docker pause|unpause omarchy-windows`. Tune and Login's Change…
+  `pkexec docker pause|unpause omarchy-windows`, and `hyprctl` and `xprop`
+  to bring the Windows window forward and make Windows fill it after a
+  connect. Tune and Login's Change…
   rewrite the VM's compose through the helper's own validated writer, which
   regenerates the whole file: keys you added to it by hand are dropped.
   Passwords go on stdin, never on a command line.
